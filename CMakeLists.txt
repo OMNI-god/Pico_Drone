@@ -1,22 +1,4 @@
-# == DO NOT EDIT THE FOLLOWING LINES for the Raspberry Pi Pico VS Code Extension to work ==
-if(WIN32)
-    set(USERHOME $ENV{USERPROFILE})
-else()
-    set(USERHOME $ENV{HOME})
-endif()
-set(sdkVersion 2.3.0)
-set(toolchainVersion 15_2_Rel1)
-set(picotoolVersion 2.3.0)
-set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
-if (EXISTS ${picoVscode})
-    include(${picoVscode})
-endif()
-# ====================================================================================
 cmake_minimum_required(VERSION 3.13)
-
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ====================================================================================
 # Pico VS Code Extension
@@ -36,11 +18,16 @@ if(EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 
-set(PICO_BOARD pico2 CACHE STRING "Board type")
+# ====================================================================================
+# Project
+# ====================================================================================
 
-# ====================================================================================
-# Pico SDK
-# ====================================================================================
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+set(PICO_BOARD pico2 CACHE STRING "Board type")
 
 include(pico_sdk_import.cmake)
 
@@ -80,7 +67,7 @@ target_include_directories(ADXL345 PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/sensors/accelerometer
 )
 
-target_link_libraries(ADXL345
+target_link_libraries(ADXL345 PUBLIC
     pico_stdlib
     hardware_i2c
 )
@@ -103,13 +90,34 @@ target_link_libraries(ServoESC PUBLIC
     hardware_clocks
 )
 
-add_library(Interfaces INTERFACE)
+# ====================================================================================
+# IPwm Interface Library
+# ====================================================================================
 
 add_library(IPwm INTERFACE)
 
 target_include_directories(IPwm INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/Drivers/Interfaces
+)
+
+# ====================================================================================
+# Servo Library
+# ====================================================================================
+
+add_library(Servo
+    Drivers/PWM/Servo.cpp
+)
+
+target_include_directories(Servo PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/Drivers/PWM
+    ${CMAKE_CURRENT_SOURCE_DIR}/Drivers/Interfaces
+)
+
+target_link_libraries(Servo PUBLIC
+    pico_stdlib
+    hardware_pwm
+    hardware_clocks
+    IPwm
 )
 
 # ====================================================================================
@@ -127,8 +135,6 @@ target_link_libraries(drone PRIVATE
 
     ADXL345
     ServoESC
-    Interfaces
-    IPwm
     Servo
 
     FreeRTOS-Kernel

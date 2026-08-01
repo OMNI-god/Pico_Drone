@@ -48,12 +48,31 @@ void vTaskServo(void *pvParameters)
 {
     auto *data = static_cast<ServoTaskData *>(pvParameters);
 
+    int angle = 0;
+    int direction = 1;
+
     while (true)
     {
         for (size_t i = 0; i < data->count; ++i)
         {
-            data->servos[i].setPosition(30);
-            vTaskDelay(pdMS_TO_TICKS(200));
+            data->servos[i].setPosition(angle);
         }
+
+        printf("Angle: %d\n", angle);
+
+        angle += direction;
+
+        if (angle >= 180)
+        {
+            angle = 180;
+            direction = -1;
+        }
+        else if (angle <= 0)
+        {
+            angle = 0;
+            direction = 1;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }

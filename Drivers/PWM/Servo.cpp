@@ -1,44 +1,65 @@
 #include "Servo.h"
+#include "algorithm"
 
 Servo::Servo(uint32_t pinNumber, uint32_t frequency)
 {
     pin = pinNumber;
     this->frequency = frequency;
-    initialized = initialize();
+    initialize();
 }
 
 bool Servo::initialize()
 {
     gpio_set_function(pin, GPIO_FUNC_PWM);
+
     sliceNumber = pwm_gpio_to_slice_num(pin);
     channel = pwm_gpio_to_channel(pin);
 
-    pwm_set_enabled(sliceNumber, true);
+    pwm_config config = pwm_get_default_config();
 
-    wrap = clock_get_hz(clk_sys) / (frequency - 1);
-    pwm_set_wrap(sliceNumber, wrap);
+    clkDiv = 64.0f;
+
+    pwm_config_set_clkdiv(&config, clkDiv);
+
+    wrap = clock_get_hz(clk_sys) / (clkDiv * frequency) - 1;
+
+    pwm_config_set_wrap(&config, wrap);
+
+    pwm_init(sliceNumber, &config, true);
+
+    initialized = true;
+
     return true;
 }
 
-int Servo::setPosition(int position)
+int Servo::setPosition(int angle)
 {
-    if (!isValidTiming(static_cast<uint32_t>(position)))
-        return 0;
+    if (angle < 0)
+        angle = 0;
 
-    return static_cast<int>(setPulseWidth(static_cast<uint32_t>(position)));
+    if (angle > 180)
+        angle = 180;
+
+    uint32_t pulseWidth =
+        1000 + ((angle * 1000) / 180);
+
+    return static_cast<int>(setPulseWidth(pulseWidth));
 }
 
-uint64_t Servo::setPulseWidth(uint32_t width)
+uint64_t Servo::setPulseWidth(uint32_t pulseWidthUs)
 {
     if (!initialized)
     {
-        initialized = initialize();
-        if (!initialized)
+        if (!initialize())
             return 0;
     }
 
-    uint32_t sys_clk = clock_get_hz(clk_sys);
-    uint32_t level = width * (wrap + 1) / (sys_clk / frequency);
+    float pwmClock = clock_get_hz(clk_sys) / clkDiv;
+
+    uint32_t level =
+        (pulseWidthUs * pwmClock) / 1000000.0f;
+
     pwm_set_chan_level(sliceNumber, channel, level);
+
     return level;
 }
