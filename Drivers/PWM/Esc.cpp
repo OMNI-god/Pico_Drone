@@ -28,6 +28,12 @@ int Esc::setSpeed(int throttle)
     return lvl;
 }
 
+bool Esc::isValidTiming(uint32_t pulseWidthUs)
+{
+    return pulseWidthUs >= 900 &&
+           pulseWidthUs <= 2100;
+}
+
 uint64_t Esc::setPulseWidth(uint32_t width)
 {
     if (!initialize)

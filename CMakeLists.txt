@@ -1,8 +1,14 @@
 cmake_minimum_required(VERSION 3.13)
 
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # ====================================================================================
 # Pico VS Code Extension
 # ====================================================================================
+
 if(WIN32)
     set(USERHOME $ENV{USERPROFILE})
 else()
@@ -14,18 +20,14 @@ set(toolchainVersion 15_2_Rel1)
 set(picotoolVersion 2.3.0)
 
 set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
+
 if(EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 
 # ====================================================================================
-# Project
+# Pico
 # ====================================================================================
-
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(PICO_BOARD pico2 CACHE STRING "Board type")
 
@@ -56,7 +58,7 @@ pico_enable_stdio_usb(drone 1)
 pico_enable_stdio_uart(drone 0)
 
 # ====================================================================================
-# ADXL345 Library
+# ADXL345
 # ====================================================================================
 
 add_library(ADXL345
@@ -73,7 +75,7 @@ target_link_libraries(ADXL345 PUBLIC
 )
 
 # ====================================================================================
-# Servo ESC Library
+# ServoESC
 # ====================================================================================
 
 add_library(ServoESC
@@ -91,7 +93,7 @@ target_link_libraries(ServoESC PUBLIC
 )
 
 # ====================================================================================
-# IPwm Interface Library
+# IPwm Interface
 # ====================================================================================
 
 add_library(IPwm INTERFACE)
@@ -101,7 +103,7 @@ target_include_directories(IPwm INTERFACE
 )
 
 # ====================================================================================
-# Servo Library
+# Servo
 # ====================================================================================
 
 add_library(Servo
@@ -110,7 +112,6 @@ add_library(Servo
 
 target_include_directories(Servo PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/Drivers/PWM
-    ${CMAKE_CURRENT_SOURCE_DIR}/Drivers/Interfaces
 )
 
 target_link_libraries(Servo PUBLIC
@@ -118,6 +119,35 @@ target_link_libraries(Servo PUBLIC
     hardware_pwm
     hardware_clocks
     IPwm
+)
+
+# ====================================================================================
+# IUart Interface
+# ====================================================================================
+
+add_library(IUart INTERFACE)
+
+target_include_directories(IUart INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}/Drivers/Interfaces
+)
+
+# ====================================================================================
+# ELRS
+# ====================================================================================
+
+add_library(Elrs
+    Drivers/UART/Elrs.cpp
+)
+
+target_include_directories(Elrs PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/Drivers/UART
+)
+
+target_link_libraries(Elrs PUBLIC
+    pico_stdlib
+    hardware_uart
+    hardware_gpio
+    IUart
 )
 
 # ====================================================================================
@@ -130,12 +160,14 @@ target_include_directories(drone PRIVATE
 
 target_link_libraries(drone PRIVATE
     pico_stdlib
+
     hardware_i2c
     hardware_pwm
 
     ADXL345
     ServoESC
     Servo
+    Elrs
 
     FreeRTOS-Kernel
     FreeRTOS-Kernel-Heap4

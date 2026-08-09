@@ -11,4 +11,5 @@ public:
 
 private:
     uint64_t setPulseWidth(uint32_t width) override;
+    bool isValidTiming(uint32_t pulseWidthUs);
 };
