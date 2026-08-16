@@ -10,7 +10,6 @@ extern "C"
 }
 
 #include "ADXL345.h"
-#include "ServoESC.h"
 #include "Servo.h"
 #include "Elrs.h"
 

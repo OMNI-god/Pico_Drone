@@ -18,5 +18,5 @@ protected:
 public:
     virtual ~IPwm() = default;
     virtual bool initialize() = 0;
-    virtual uint64_t setPulseWidth(uint32_t pulseWidthUs) = 0;
+    virtual uint32_t setPulseWidth(uint32_t pulseWidthUs) = 0;
 };

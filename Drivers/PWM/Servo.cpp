@@ -46,7 +46,7 @@ int Servo::setPosition(int angle)
     return static_cast<int>(setPulseWidth(pulseWidth));
 }
 
-uint64_t Servo::setPulseWidth(uint32_t pulseWidthUs)
+uint32_t Servo::setPulseWidth(uint32_t pulseWidthUs)
 {
     if (!initialized)
     {

@@ -12,5 +12,5 @@ public:
     int setPosition(int angle);
 
 private:
-    uint64_t setPulseWidth(uint32_t pulseWidthUs) override;
+    uint32_t setPulseWidth(uint32_t pulseWidthUs) override;
 };
