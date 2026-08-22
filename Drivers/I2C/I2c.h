@@ -36,6 +36,9 @@ public:
         uint32_t rxLength) override;
 
 private:
+    bool recoverBus();
+
+private:
     i2c_inst_t *i2cInstance;
 
     uint32_t baudrate;

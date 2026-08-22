@@ -218,6 +218,7 @@ target_include_directories(BMP280 PUBLIC
 
 target_link_libraries(BMP280 PUBLIC
     II2c
+    pico_stdlib
 )
 
 # ====================================================================================
@@ -254,6 +255,27 @@ target_include_directories(ICM20948 PUBLIC
 target_link_libraries(ICM20948 PUBLIC
     II2c
     pico_stdlib
+)
+
+# ====================================================================================
+# Sensor Manager
+# ====================================================================================
+
+add_library(SensorManager
+    Managers/Sensors/SensorManager.cpp
+)
+
+target_include_directories(SensorManager
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/Managers/Sensors
+)
+
+target_link_libraries(SensorManager
+    PUBLIC
+        ICM20948
+        GY271
+        BMP280
+        ADXL345
 )
 
 # ====================================================================================
@@ -295,6 +317,9 @@ target_link_libraries(drone PRIVATE
     BMP280
     GY271
     ICM20948
+
+    #Managers
+    SensorManager
 
     # FreeRTOS
     FreeRTOS-Kernel

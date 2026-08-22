@@ -1,117 +1,152 @@
-#include <cstddef>
 #include <cstdio>
 
 #include "pico/stdlib.h"
 
-extern "C"
-{
-#include "FreeRTOS.h"
-#include "task.h"
-}
-
+#include "I2c.h"
+#include "ICM20948.h"
+#include "GY271.h"
+#include "BMP280.h"
 #include "ADXL345.h"
-#include "Servo.h"
-#include "Elrs.h"
-
-void vTaskPrint(void *pvParameters);
-void vTaskServo(void *pvParameters);
-void vTaskElrs(void *pvParameters);
-
-struct ServoTaskData
-{
-    Servo *servos;
-    size_t count;
-};
+#include "SensorManager.h"
 
 int main()
 {
     stdio_init_all();
 
-    Servo servos[4] = {Servo(16), Servo(17), Servo(18), Servo(19)};
-    ServoTaskData taskData{servos, 4};
+    sleep_ms(2000);
 
-    // xTaskCreate(vTaskPrint, "PrintTask", 1024, nullptr, 1, nullptr);
-    // xTaskCreate(vTaskServo, "ServoTask", 2048, &taskData, 1, nullptr);
-    xTaskCreate(
-        vTaskElrs,
-        "ELRS",
-        2048,
-        nullptr,
-        2,
-        nullptr);
-    vTaskStartScheduler();
-}
+    printf("\n");
+    printf("==============================\n");
+    printf(" SensorManager Test\n");
+    printf("==============================\n");
 
-void vTaskPrint(void *pvParameters)
-{
-    while (true)
-    {
-        printf("Task 1: Printing from FreeRTOS!\n");
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-}
+    // --------------------------------------------------
+    // I2C
+    // --------------------------------------------------
 
-void vTaskServo(void *pvParameters)
-{
-    auto *data = static_cast<ServoTaskData *>(pvParameters);
-
-    int angle = 0;
-    int direction = 1;
-
-    while (true)
-    {
-        for (size_t i = 0; i < data->count; ++i)
-        {
-            data->servos[i].setPosition(angle);
-        }
-
-        printf("Angle: %d\n", angle);
-
-        angle += direction;
-
-        if (angle >= 180)
-        {
-            angle = 180;
-            direction = -1;
-        }
-        else if (angle <= 0)
-        {
-            angle = 0;
-            direction = 1;
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(1));
-    }
-}
-void vTaskElrs(void *pvParameters)
-{
-    Elrs elrs(
-        uart1,
-        420000,
-        5, // RX
-        4  // TX
+    I2c i2c(
+        i2c1,
+        400000,
+        3, // SDA
+        2  // SCL
     );
 
-    elrs.initialize();
+    if (!i2c.initialize())
+    {
+        printf("I2C initialization FAILED\n");
+        // while (true)
+        // {
+        //     sleep_ms(1000);
+        // }
+    }
 
-    uint8_t buffer[64];
+    printf("I2C initialized\n");
+    printf("SDA = GPIO 3\n");
+    printf("SCL = GPIO 2\n");
+
+    // --------------------------------------------------
+    // Sensors
+    // --------------------------------------------------
+
+    ICM20948 imu(i2c);
+
+    GY271 magnetometer(i2c);
+
+    BMP280 barometer(i2c);
+
+    ADXL345 accelerometer(i2c);
+
+    barometer.initialize();
 
     while (true)
     {
-        int count = elrs.read(buffer, sizeof(buffer));
+        BMP280::Measurements data{};
 
-        if (count > 0)
+        if (barometer.read(data))
         {
-            printf("Received %d bytes: ", count);
-
-            for (int i = 0; i < count; i++)
-            {
-                printf("%02X ", buffer[i]);
-            }
-
-            printf("\n");
+            printf(
+                "BMP280: %.2f C, %.2f hPa\n",
+                data.temperatureC,
+                data.pressureHpa);
+        }
+        else
+        {
+            printf("BMP280 READ FAILED\n");
         }
 
-        vTaskDelay(pdMS_TO_TICKS(1));
+        sleep_ms(1000);
     }
+
+    // // --------------------------------------------------
+    // // Sensor Manager
+    // // --------------------------------------------------
+
+    // SensorManager sensors(
+    //     imu,
+    //     magnetometer,
+    //     barometer,
+    //     accelerometer);
+
+    // printf("\nInitializing SensorManager...\n");
+
+    // if (!sensors.initialize())
+    // {
+    //     printf("\nSensorManager initialization FAILED\n");
+
+    //     while (true)
+    //     {
+    //         sleep_ms(1000);
+    //     }
+    // }
+
+    // printf("\nSensorManager initialized successfully!\n");
+
+    // // --------------------------------------------------
+    // // Read sensors
+    // // --------------------------------------------------
+
+    // SensorManager::SensorData data;
+
+    // while (true)
+    // {
+    //     if (sensors.read(data))
+    //     {
+    //         printf("\n--- Sensor Data ---\n");
+
+    //         printf(
+    //             "IMU Accel: X=%.3f Y=%.3f Z=%.3f g\n",
+    //             data.imu.acceleration.x,
+    //             data.imu.acceleration.y,
+    //             data.imu.acceleration.z);
+
+    //         printf(
+    //             "IMU Gyro:  X=%.3f Y=%.3f Z=%.3f dps\n",
+    //             data.imu.gyroscope.x,
+    //             data.imu.gyroscope.y,
+    //             data.imu.gyroscope.z);
+
+    //         printf(
+    //             "MAG:       X=%.3f Y=%.3f Z=%.3f G\n",
+    //             data.magnetometer.x,
+    //             data.magnetometer.y,
+    //             data.magnetometer.z);
+
+    //         printf(
+    //             "BARO:      Pressure=%.2f Pa Temp=%.2f C\n",
+    //             data.barometer.pressureHpa,
+    //             data.barometer.temperatureC);
+
+    //         printf(
+    //             "ADXL:      X=%.3f Y=%.3f Z=%.3f g\n",
+    //             data.externalAccelerometer.x,
+    //             data.externalAccelerometer.y,
+    //             data.externalAccelerometer.z);
+    //     }
+    //     else
+    //     {
+    //         printf("SensorManager::read() FAILED\n");
+    //     }
+
+    //     sleep_ms(100);
+    // }
 }

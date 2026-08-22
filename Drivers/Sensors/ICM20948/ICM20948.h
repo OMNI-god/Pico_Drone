@@ -37,7 +37,7 @@ public:
 
     explicit ICM20948(
         II2c &bus,
-        uint8_t address = 0x68);
+        uint8_t address = 0x69);
 
     // =========================================================================
     // Public API

@@ -1,5 +1,8 @@
 #include "GY271.h"
+
 #include "pico/stdlib.h"
+
+#include <cstdio>
 
 // =============================================================================
 // Constructor
@@ -21,63 +24,126 @@ bool GY271::initialize()
 {
     initialized = false;
 
+    printf("GY271: initializing...\n");
+
     // -------------------------------------------------------------------------
-    // Verify I2C communication before configuration.
+    // Check I2C communication
     // -------------------------------------------------------------------------
 
     if (!isConnected())
     {
+        printf("GY271: connection failed\n");
         return false;
+    }
+
+    printf("GY271: connection OK\n");
+
+    // -------------------------------------------------------------------------
+    // Read initial register state
+    // -------------------------------------------------------------------------
+
+    uint8_t control1 = 0;
+
+    if (readRegister(
+            REG_CONTROL_1,
+            control1))
+    {
+        printf(
+            "GY271: initial CONTROL_1 = 0x%02X\n",
+            control1);
     }
 
     // -------------------------------------------------------------------------
     // Soft reset
     // -------------------------------------------------------------------------
 
+    printf("GY271: resetting...\n");
+
     if (!writeRegister(
             REG_CONTROL_2,
             CONTROL_2_SOFT_RESET))
     {
+        printf("GY271: reset failed\n");
         return false;
     }
 
-    // Give the device time to reset.
     sleep_ms(10);
 
     // -------------------------------------------------------------------------
-    // Set/reset period.
-    //
-    // This register controls the set/reset period of the magnetometer.
+    // SET/RESET period
     // -------------------------------------------------------------------------
 
     if (!writeRegister(
             REG_SET_RESET,
             0x01))
     {
+        printf("GY271: SET_RESET failed\n");
         return false;
     }
 
     // -------------------------------------------------------------------------
-    // Configure magnetometer.
-    //
-    // OSR  = 512
-    // RNG  = ±8 G
-    // ODR  = 200 Hz
-    // MODE = Continuous
+    // Configure continuous measurement
     // -------------------------------------------------------------------------
+
+    printf(
+        "GY271: writing CONTROL_1 = 0x%02X\n",
+        CONTROL_1_CONTINUOUS_200HZ);
 
     if (!writeRegister(
             REG_CONTROL_1,
             CONTROL_1_CONTINUOUS_200HZ))
     {
+        printf("GY271: CONTROL_1 write failed\n");
         return false;
     }
 
+    sleep_ms(10);
+
     // -------------------------------------------------------------------------
-    // Driver is now initialized.
+    // Read CONTROL_1 back
+    // -------------------------------------------------------------------------
+
+    control1 = 0;
+
+    if (!readRegister(
+            REG_CONTROL_1,
+            control1))
+    {
+        printf("GY271: CONTROL_1 read failed\n");
+        return false;
+    }
+
+    printf(
+        "GY271: CONTROL_1 = 0x%02X\n",
+        control1);
+
+    // -------------------------------------------------------------------------
+    // Read STATUS
+    // -------------------------------------------------------------------------
+
+    uint8_t status = 0;
+
+    if (!readRegister(
+            REG_STATUS,
+            status))
+    {
+        printf("GY271: STATUS read failed\n");
+        return false;
+    }
+
+    printf(
+        "GY271: STATUS = 0x%02X\n",
+        status);
+
+    // -------------------------------------------------------------------------
+    // Do NOT require DRDY during initialization.
+    //
+    // The sensor may need some time before the first measurement.
     // -------------------------------------------------------------------------
 
     initialized = true;
+
+    printf("GY271: initialized\n");
 
     return true;
 }
@@ -97,7 +163,7 @@ bool GY271::readRaw(
     }
 
     // -------------------------------------------------------------------------
-    // Check status.
+    // Read status
     // -------------------------------------------------------------------------
 
     uint8_t status = 0;
@@ -106,70 +172,71 @@ bool GY271::readRaw(
             REG_STATUS,
             status))
     {
+        printf("GY271: status read failed\n");
         return false;
     }
 
     // -------------------------------------------------------------------------
-    // Data not ready.
+    // Data ready?
     // -------------------------------------------------------------------------
 
-    if ((status & STATUS_DRDY) == 0)
+    if (!(status & STATUS_DRDY))
     {
+        // This is not necessarily an error.
+        //
+        // The sensor may simply not have produced a new sample yet.
         return false;
     }
 
     // -------------------------------------------------------------------------
-    // Magnetic sensor overflow.
-    //
-    // The reading is not reliable.
+    // Magnetic overflow
     // -------------------------------------------------------------------------
 
-    if ((status & STATUS_OVL) != 0)
+    if (status & STATUS_OVL)
     {
+        printf(
+            "GY271: magnetic overflow, STATUS=0x%02X\n",
+            status);
+
+        // Do not use saturated data.
         return false;
     }
 
     // -------------------------------------------------------------------------
-    // Read X/Y/Z in a single I2C transaction.
-    //
-    // Register sequence:
-    //
-    // X_LSB
-    // X_MSB
-    // Y_LSB
-    // Y_MSB
-    // Z_LSB
-    // Z_MSB
+    // Read X/Y/Z
     // -------------------------------------------------------------------------
 
-    uint8_t data[6];
+    uint8_t data[6] = {};
 
     if (!readRegisters(
             REG_X_LSB,
             data,
             sizeof(data)))
     {
+        printf("GY271: magnetic data read failed\n");
         return false;
     }
 
-    // -------------------------------------------------------------------------
-    // Convert little-endian sensor data to signed 16-bit values.
-    // -------------------------------------------------------------------------
+    // QMC5883L:
+    //
+    // X LSB
+    // X MSB
+    // Y LSB
+    // Y MSB
+    // Z LSB
+    // Z MSB
 
-    x =
-        static_cast<int16_t>(
-            static_cast<uint16_t>(data[0]) |
-            (static_cast<uint16_t>(data[1]) << 8));
+    x = static_cast<int16_t>(
+        static_cast<uint16_t>(data[1]) << 8 |
+        data[0]);
 
-    y =
-        static_cast<int16_t>(
-            static_cast<uint16_t>(data[2]) |
-            (static_cast<uint16_t>(data[3]) << 8));
+    y = static_cast<int16_t>(
+        static_cast<uint16_t>(data[3]) << 8 |
+        data[2]);
 
-    z =
-        static_cast<int16_t>(
-            static_cast<uint16_t>(data[4]) |
-            (static_cast<uint16_t>(data[5]) << 8));
+    z = static_cast<int16_t>(
+        static_cast<uint16_t>(data[5]) << 8 |
+        data[4]);
 
     return true;
 }
@@ -181,9 +248,9 @@ bool GY271::readRaw(
 bool GY271::read(
     MagneticField &field)
 {
-    int16_t x;
-    int16_t y;
-    int16_t z;
+    int16_t x = 0;
+    int16_t y = 0;
+    int16_t z = 0;
 
     if (!readRaw(
             x,
@@ -193,14 +260,9 @@ bool GY271::read(
         return false;
     }
 
-    field.x =
-        x * scale;
-
-    field.y =
-        y * scale;
-
-    field.z =
-        z * scale;
+    field.x = static_cast<float>(x) * scale;
+    field.y = static_cast<float>(y) * scale;
+    field.z = static_cast<float>(z) * scale;
 
     return true;
 }
@@ -211,17 +273,20 @@ bool GY271::read(
 
 bool GY271::isConnected()
 {
-    uint8_t control = 0;
+    uint8_t value = 0;
 
-    // QMC5883L does not expose a conventional
-    // WHO_AM_I register.
+    // -------------------------------------------------------------------------
+    // There is no reliable WHO_AM_I register on the QMC5883L.
     //
-    // Therefore, successful communication with
-    // a valid register is used as the connection test.
+    // Therefore perform an actual I2C transaction.
+    //
+    // STATUS is a better register to use than CONTROL_1 because we don't
+    // depend on a particular power/configuration state.
+    // -------------------------------------------------------------------------
 
     return readRegister(
-        REG_CONTROL_1,
-        control);
+        REG_STATUS,
+        value);
 }
 
 // =============================================================================
@@ -251,10 +316,13 @@ bool GY271::writeRegister(
             reg,
             value};
 
-    return bus.write(
-               address,
-               data,
-               sizeof(data)) ==
+    const int result =
+        bus.write(
+            address,
+            data,
+            sizeof(data));
+
+    return result ==
            static_cast<int>(sizeof(data));
 }
 
@@ -277,11 +345,14 @@ bool GY271::readRegisters(
         return false;
     }
 
-    return bus.writeRead(
-               address,
-               &reg,
-               1,
-               data,
-               length) ==
+    const int result =
+        bus.writeRead(
+            address,
+            &reg,
+            1,
+            data,
+            length);
+
+    return result ==
            static_cast<int>(length);
 }
