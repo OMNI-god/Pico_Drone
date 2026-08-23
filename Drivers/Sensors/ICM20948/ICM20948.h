@@ -7,10 +7,6 @@
 class ICM20948
 {
 public:
-    // =========================================================================
-    // Data Types
-    // =========================================================================
-
     struct Acceleration
     {
         float x;
@@ -31,17 +27,9 @@ public:
         Gyroscope gyroscope;
     };
 
-    // =========================================================================
-    // Constructor
-    // =========================================================================
-
     explicit ICM20948(
         II2c &bus,
         uint8_t address = 0x69);
-
-    // =========================================================================
-    // Public API
-    // =========================================================================
 
     bool initialize();
 
@@ -56,85 +44,78 @@ public:
 
     bool isConnected();
 
+    uint8_t getAddress() const;
+
 private:
-    // =========================================================================
-    // ICM-20948 Register Map - Bank 0
-    // =========================================================================
+    // =====================================================================
+    // I2C ADDRESSES
+    // =====================================================================
 
-    static constexpr uint8_t REG_WHO_AM_I =
-        0x00;
+    static constexpr uint8_t ADDRESS_68 = 0x68;
+    static constexpr uint8_t ADDRESS_69 = 0x69;
 
-    static constexpr uint8_t REG_USER_CTRL =
-        0x03;
+    // =====================================================================
+    // BANK 0 REGISTERS
+    // =====================================================================
 
-    static constexpr uint8_t REG_PWR_MGMT_1 =
-        0x06;
+    static constexpr uint8_t REG_WHO_AM_I = 0x00;
+    static constexpr uint8_t REG_USER_CTRL = 0x03;
+    static constexpr uint8_t REG_PWR_MGMT_1 = 0x06;
+    static constexpr uint8_t REG_PWR_MGMT_2 = 0x07;
 
-    static constexpr uint8_t REG_PWR_MGMT_2 =
-        0x07;
+    static constexpr uint8_t REG_ACCEL_XOUT_H = 0x2D;
+    static constexpr uint8_t REG_GYRO_XOUT_H = 0x33;
 
-    static constexpr uint8_t REG_ACCEL_XOUT_H =
-        0x2D;
+    static constexpr uint8_t REG_BANK_SEL = 0x7F;
 
-    static constexpr uint8_t REG_GYRO_XOUT_H =
-        0x33;
+    // =====================================================================
+    // BANK 2 REGISTERS
+    // =====================================================================
 
-    static constexpr uint8_t REG_BANK_SEL =
-        0x7F;
+    static constexpr uint8_t REG_GYRO_CONFIG_1 = 0x01;
+    static constexpr uint8_t REG_ACCEL_CONFIG = 0x14;
 
-    // =========================================================================
-    // ICM-20948 Register Map - Bank 2
-    // =========================================================================
+    // =====================================================================
+    // DEVICE ID
+    // =====================================================================
 
-    static constexpr uint8_t REG_GYRO_CONFIG_1 =
-        0x01;
+    static constexpr uint8_t DEVICE_ID = 0xEA;
 
-    static constexpr uint8_t REG_ACCEL_CONFIG =
-        0x14;
+    // =====================================================================
+    // SENSOR SCALE
+    // =====================================================================
 
-    // =========================================================================
-    // Device Information
-    // =========================================================================
-
-    static constexpr uint8_t DEVICE_ID =
-        0xEA;
-
-    // =========================================================================
-    // Configuration
-    // =========================================================================
-
-    // Accelerometer:
-    // ±2 g
+    // Accelerometer ±2g
     // 16384 LSB/g
+
     static constexpr float ACCEL_SCALE =
         1.0f / 16384.0f;
 
-    // Gyroscope:
-    // ±250 dps
-    // 131 LSB/(degrees/sec)
+    // Gyroscope ±250 DPS
+    // 131 LSB/DPS
+
     static constexpr float GYRO_SCALE =
         1.0f / 131.0f;
 
-    // =========================================================================
-    // State
-    // =========================================================================
+    // =====================================================================
+    // STATE
+    // =====================================================================
 
     II2c &bus;
 
     uint8_t address;
 
-    bool initialized = false;
+    bool initialized;
 
-    // 0xFF means unknown bank.
-    uint8_t currentBank = 0xFF;
+    uint8_t currentBank;
 
-    float accelScale = ACCEL_SCALE;
+    float accelScale;
 
-    float gyroScale = GYRO_SCALE;
+    float gyroScale;
 
-    // =========================================================================
-    // Register Access
-    // =========================================================================
+    // =====================================================================
+    // LOW LEVEL I2C
+    // =====================================================================
 
     bool selectBank(
         uint8_t bank);
@@ -151,4 +132,21 @@ private:
         uint8_t reg,
         uint8_t *data,
         uint32_t length);
+
+    // =====================================================================
+    // DEVICE DETECTION
+    // =====================================================================
+
+    bool detectDevice();
+
+    bool readWhoAmI(
+        uint8_t &value);
+
+    // =====================================================================
+    // DATA CONVERSION
+    // =====================================================================
+
+    static int16_t makeInt16(
+        uint8_t high,
+        uint8_t low);
 };

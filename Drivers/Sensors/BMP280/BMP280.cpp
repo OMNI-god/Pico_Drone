@@ -3,6 +3,7 @@
 #include "pico/stdlib.h"
 
 #include <cstdio>
+#include <cmath>
 
 // =============================================================================
 // Constructor
@@ -10,19 +11,35 @@
 
 BMP280::BMP280(
     II2c &bus,
-    uint8_t address)
+    uint8_t address,
+    float seaLevelHpa)
     : bus(bus),
-      address(address)
+      address(address),
+      seaLevelHpa(seaLevelHpa)
 {
 }
 
 // =============================================================================
 // Initialize
+//
+// This intentionally follows the Python implementation:
+//
+// 1. Check CHIP_ID
+// 2. Soft reset
+// 3. Wait
+// 4. Read calibration
+// 5. CTRL_MEAS = 0x27
+// 6. CONFIG = 0xA0
+//
+// No forced measurement.
+// No manual trigger.
+// Sensor remains in NORMAL mode.
 // =============================================================================
 
 bool BMP280::initialize()
 {
     initialized = false;
+    valid = false;
 
     printf(
         "BMP280: initializing...\n");
@@ -47,17 +64,16 @@ bool BMP280::initialize()
         "BMP280: CHIP_ID = 0x%02X\n",
         id);
 
-    if (id != DEVICE_ID)
+    if (id != CHIP_ID)
     {
         printf(
-            "BMP280: invalid CHIP_ID, "
-            "expected 0x58\n");
+            "BMP280: invalid CHIP_ID\n");
 
         return false;
     }
 
     // =========================================================================
-    // SOFTWARE RESET
+    // SOFT RESET
     // =========================================================================
 
     printf(
@@ -73,59 +89,41 @@ bool BMP280::initialize()
         return false;
     }
 
-    // Datasheet reset startup time.
-    sleep_ms(5);
+    /*
+     * Give the sensor enough time after software reset.
+     *
+     * This is important because calibration/NVM becomes available
+     * only after reset processing has completed.
+     */
+
+    sleep_ms(10);
 
     // =========================================================================
-    // Wait for NVM calibration update
-    // =========================================================================
-
-    bool nvmReady = false;
-
-    for (int i = 0; i < 100; ++i)
-    {
-        uint8_t status = 0;
-
-        if (!readRegister(
-                REG_STATUS,
-                status))
-        {
-            printf(
-                "BMP280: STATUS read failed\n");
-
-            return false;
-        }
-
-        printf(
-            "BMP280 INIT STATUS[%d] = 0x%02X\n",
-            i,
-            status);
-
-        if ((status & STATUS_IM_UPDATE) == 0)
-        {
-            nvmReady = true;
-            break;
-        }
-
-        sleep_ms(1);
-    }
-
-    if (!nvmReady)
-    {
-        printf(
-            "BMP280: NVM update timeout\n");
-
-        return false;
-    }
-
-    // =========================================================================
-    // Read calibration
+    // CALIBRATION
     // =========================================================================
 
     if (!readCalibration())
     {
         printf(
             "BMP280: calibration read failed\n");
+
+        return false;
+    }
+
+    // =========================================================================
+    // CTRL_MEAS
+    // =========================================================================
+
+    printf(
+        "BMP280: writing CTRL_MEAS = 0x%02X\n",
+        CTRL_MEAS_NORMAL);
+
+    if (!writeRegister(
+            REG_CTRL_MEAS,
+            CTRL_MEAS_NORMAL))
+    {
+        printf(
+            "BMP280: CTRL_MEAS write failed\n");
 
         return false;
     }
@@ -149,48 +147,28 @@ bool BMP280::initialize()
     }
 
     // =========================================================================
-    // Start in sleep mode
+    // Verify configuration
     // =========================================================================
 
-    printf(
-        "BMP280: writing CTRL_MEAS sleep = 0x%02X\n",
-        CTRL_MEAS_SLEEP);
-
-    if (!writeRegister(
-            REG_CTRL_MEAS,
-            CTRL_MEAS_SLEEP))
-    {
-        printf(
-            "BMP280: CTRL_MEAS write failed\n");
-
-        return false;
-    }
-
-    sleep_ms(2);
-
-    // =========================================================================
-    // Read back configuration
-    // =========================================================================
-
-    uint8_t config = 0;
     uint8_t ctrl = 0;
-
-    if (!readRegister(
-            REG_CONFIG,
-            config))
-    {
-        printf(
-            "BMP280: CONFIG readback failed\n");
-
-        return false;
-    }
+    uint8_t config = 0;
 
     if (!readRegister(
             REG_CTRL_MEAS,
             ctrl))
     {
         printf(
-            "BMP280: CTRL_MEAS readback failed\n");
+            "BMP280: CTRL_MEAS verification failed\n");
+
+        return false;
+    }
+
+    if (!readRegister(
+            REG_CONFIG,
+            config))
+    {
+        printf(
+            "BMP280: CONFIG verification failed\n");
 
         return false;
     }
@@ -206,13 +184,17 @@ bool BMP280::initialize()
     if (config != CONFIG_VALUE)
     {
         printf(
-            "BMP280: WARNING CONFIG mismatch\n");
+            "BMP280: CONFIG mismatch\n");
+
+        return false;
     }
 
-    if (ctrl != CTRL_MEAS_SLEEP)
+    if (ctrl != CTRL_MEAS_NORMAL)
     {
         printf(
-            "BMP280: WARNING CTRL_MEAS mismatch\n");
+            "BMP280: CTRL_MEAS mismatch\n");
+
+        return false;
     }
 
     initialized = true;
@@ -220,152 +202,38 @@ bool BMP280::initialize()
     printf(
         "BMP280: initialization successful\n");
 
-    return true;
-}
-
-// =============================================================================
-// Trigger forced measurement
-// =============================================================================
-
-bool BMP280::triggerMeasurement()
-{
-    printf(
-        "BMP280: triggering forced measurement\n");
-
-    if (!writeRegister(
-            REG_CTRL_MEAS,
-            CTRL_MEAS_FORCED))
-    {
-        printf(
-            "BMP280: failed to trigger measurement\n");
-
-        return false;
-    }
-
-    uint8_t ctrl = 0;
-
-    if (!readRegister(
-            REG_CTRL_MEAS,
-            ctrl))
-    {
-        printf(
-            "BMP280: CTRL_MEAS read failed\n");
-
-        return false;
-    }
-
-    printf(
-        "BMP280: CTRL_MEAS after trigger = 0x%02X\n",
-        ctrl);
-
-    // =========================================================================
-    // Important:
-    //
-    // The mode bits are:
-    //
-    // 00 = sleep
-    // 01 = forced
-    // 10/11 = normal
-    //
-    // Reading 0x25 means:
-    //
-    // 010 010 01
-    //       ^^^
-    //       forced mode
-    //
-    // It is valid immediately after triggering.
-    // =========================================================================
+    /*
+     * The sensor is now in normal mode.
+     *
+     * Do NOT trigger a forced measurement here.
+     *
+     * The Python driver also simply waits for the sensor to
+     * produce measurements.
+     */
 
     return true;
-}
-
-// =============================================================================
-// Wait for measurement
-// =============================================================================
-
-bool BMP280::waitForMeasurement()
-{
-    // =========================================================================
-    // IMPORTANT:
-    //
-    // Do not immediately assume STATUS=0 means conversion is complete.
-    //
-    // Forced measurement takes time.
-    //
-    // With:
-    //
-    // Temperature x2
-    // Pressure    x16
-    //
-    // conversion is approximately tens of milliseconds.
-    //
-    // Give the sensor some time before polling.
-    // =========================================================================
-
-    sleep_ms(5);
-
-    for (int i = 0; i < 100; ++i)
-    {
-        uint8_t status = 0;
-
-        if (!readRegister(
-                REG_STATUS,
-                status))
-        {
-            printf(
-                "BMP280: STATUS read failed\n");
-
-            return false;
-        }
-
-        printf(
-            "BMP280 STATUS[%d] = 0x%02X\n",
-            i,
-            status);
-
-        // ---------------------------------------------------------------------
-        // NVM update
-        // ---------------------------------------------------------------------
-
-        if (status & STATUS_IM_UPDATE)
-        {
-            sleep_ms(1);
-            continue;
-        }
-
-        // ---------------------------------------------------------------------
-        // Measurement still running
-        // ---------------------------------------------------------------------
-
-        if (status & STATUS_MEASURING)
-        {
-            sleep_ms(2);
-            continue;
-        }
-
-        // ---------------------------------------------------------------------
-        // Measurement complete
-        // ---------------------------------------------------------------------
-
-        printf(
-            "BMP280: MEASUREMENT COMPLETE\n");
-
-        return true;
-    }
-
-    printf(
-        "BMP280: measurement timeout\n");
-
-    return false;
 }
 
 // =============================================================================
 // Read
+//
+// Equivalent to:
+//
+// raw = self._read_raw()
+//
+// followed by:
+//
+// temperature compensation
+// pressure compensation
+// altitude calculation
+// sanity checking
 // =============================================================================
 
 bool BMP280::read(
     Measurements &measurements)
 {
+    measurements = {};
+
     if (!initialized)
     {
         printf(
@@ -375,25 +243,7 @@ bool BMP280::read(
     }
 
     // =========================================================================
-    // Trigger
-    // =========================================================================
-
-    if (!triggerMeasurement())
-    {
-        return false;
-    }
-
-    // =========================================================================
-    // Wait
-    // =========================================================================
-
-    if (!waitForMeasurement())
-    {
-        return false;
-    }
-
-    // =========================================================================
-    // Read raw values
+    // Read raw data
     // =========================================================================
 
     int32_t rawTemperature = 0;
@@ -403,29 +253,47 @@ bool BMP280::read(
             rawTemperature,
             rawPressure))
     {
+        valid = false;
+
+        printf(
+            "BMP280 READ FAILED\n");
+
         return false;
     }
 
     // =========================================================================
-    // Validate raw values
+    // BMP280 startup / skipped measurement check
     // =========================================================================
 
-    if (rawTemperature <= 0 ||
-        rawTemperature > 0xFFFFF)
-    {
-        printf(
-            "BMP280: invalid raw temperature = %ld\n",
-            static_cast<long>(rawTemperature));
+    /*
+     * BMP280 returns 0x80000 when a measurement channel is skipped.
+     *
+     * This is exactly what you were seeing:
+     *
+     * F7 = 80
+     * F8 = 00
+     * F9 = 00
+     *
+     * => pressure = 0x80000
+     *
+     * and:
+     *
+     * FA = 80
+     * FB = 00
+     * FC = 00
+     *
+     * => temperature = 0x80000
+     *
+     * Therefore this must NOT be passed to compensation.
+     */
 
-        return false;
-    }
-
-    if (rawPressure <= 0 ||
-        rawPressure > 0xFFFFF)
+    if (rawTemperature == ADC_INVALID ||
+        rawPressure == ADC_INVALID)
     {
+        valid = false;
+
         printf(
-            "BMP280: invalid raw pressure = %ld\n",
-            static_cast<long>(rawPressure));
+            "BMP280: measurement not ready\n");
 
         return false;
     }
@@ -434,7 +302,7 @@ bool BMP280::read(
     // Temperature compensation
     // =========================================================================
 
-    measurements.temperatureC =
+    float temperatureC =
         compensateTemperature(
             rawTemperature);
 
@@ -442,29 +310,87 @@ bool BMP280::read(
     // Pressure compensation
     // =========================================================================
 
-    measurements.pressurePa =
+    float pressurePa =
         compensatePressure(
             rawPressure);
 
-    if (measurements.pressurePa <= 0.0f)
+    // =========================================================================
+    // Pressure sanity check
+    // =========================================================================
+
+    float pressureHpa =
+        pressurePa / 100.0f;
+
+    /*
+     * Same range as Python:
+     *
+     * 300 hPa <= pressure <= 1100 hPa
+     */
+
+    if (!std::isfinite(pressureHpa) ||
+        pressureHpa < 300.0f ||
+        pressureHpa > 1100.0f)
     {
+        valid = false;
+
         printf(
-            "BMP280: invalid compensated pressure = %.2f Pa\n",
-            measurements.pressurePa);
+            "BMP280: invalid pressure = %.2f hPa\n",
+            pressureHpa);
 
         return false;
     }
 
+    // =========================================================================
+    // Temperature sanity
+    // =========================================================================
+
+    if (!std::isfinite(temperatureC) ||
+        temperatureC < -40.0f ||
+        temperatureC > 85.0f)
+    {
+        valid = false;
+
+        printf(
+            "BMP280: invalid temperature = %.2f C\n",
+            temperatureC);
+
+        return false;
+    }
+
+    // =========================================================================
+    // Altitude
+    // =========================================================================
+
+    float altitudeM =
+        altitudeFromPressure(
+            pressureHpa);
+
+    // =========================================================================
+    // Result
+    // =========================================================================
+
+    measurements.temperatureC =
+        temperatureC;
+
+    measurements.pressurePa =
+        pressurePa;
+
     measurements.pressureHpa =
-        measurements.pressurePa / 100.0f;
+        pressureHpa;
+
+    measurements.altitudeM =
+        altitudeM;
+
+    measurements.valid =
+        true;
+
+    valid = true;
 
     printf(
-        "BMP280: T=%.2f C "
-        "P=%.2f Pa "
-        "%.2f hPa\n",
-        measurements.temperatureC,
-        measurements.pressurePa,
-        measurements.pressureHpa);
+        "BMP280: T=%.2f C | P=%.2f hPa | Alt=%.2f m\n",
+        temperatureC,
+        pressureHpa,
+        altitudeM);
 
     return true;
 }
@@ -510,7 +436,7 @@ bool BMP280::readPressure(
 }
 
 // =============================================================================
-// Check connection
+// Connection
 // =============================================================================
 
 bool BMP280::isConnected()
@@ -524,7 +450,30 @@ bool BMP280::isConnected()
         return false;
     }
 
-    return id == DEVICE_ID;
+    return id == CHIP_ID;
+}
+
+// =============================================================================
+// Valid state
+// =============================================================================
+
+bool BMP280::isValid() const
+{
+    return valid;
+}
+
+// =============================================================================
+// Sea level pressure
+// =============================================================================
+
+void BMP280::setSeaLevelPressure(
+    float hpa)
+{
+    if (hpa >= 900.0f &&
+        hpa <= 1100.0f)
+    {
+        seaLevelHpa = hpa;
+    }
 }
 
 // =============================================================================
@@ -612,7 +561,7 @@ bool BMP280::readCalibration()
             (static_cast<uint16_t>(data[23]) << 8));
 
     // =========================================================================
-    // Print
+    // Print calibration
     // =========================================================================
 
     printf("\n");
@@ -667,25 +616,18 @@ bool BMP280::readCalibration()
         "P9 = %d\n",
         dig_P9);
 
-    printf("------------------\n");
-    printf("\n");
+    printf(
+        "------------------\n\n");
 
     // =========================================================================
-    // Basic validation
+    // Validate calibration
     // =========================================================================
 
-    if (dig_T1 == 0)
+    if (dig_T1 == 0 ||
+        dig_P1 == 0)
     {
         printf(
-            "BMP280: invalid T1\n");
-
-        return false;
-    }
-
-    if (dig_P1 == 0)
-    {
-        printf(
-            "BMP280: invalid P1\n");
+            "BMP280: invalid calibration\n");
 
         return false;
     }
@@ -694,7 +636,7 @@ bool BMP280::readCalibration()
 }
 
 // =============================================================================
-// Read raw measurement
+// Read raw data
 // =============================================================================
 
 bool BMP280::readRaw(
@@ -709,10 +651,14 @@ bool BMP280::readRaw(
             sizeof(data)))
     {
         printf(
-            "BMP280: measurement data read failed\n");
+            "BMP280: DATA read failed\n");
 
         return false;
     }
+
+    // =========================================================================
+    // Print raw registers
+    // =========================================================================
 
     printf(
         "BMP280 DATA:\n"
@@ -757,114 +703,207 @@ bool BMP280::readRaw(
 
 // =============================================================================
 // Temperature compensation
+//
+// This is intentionally mathematically equivalent to the Python implementation:
+//
+// var1 = (adc_t / 16384 - T1 / 1024) * T2
+//
+// var2 = ((adc_t / 131072 - T1 / 8192)^2) * T3
+//
+// t_fine = var1 + var2
+//
+// temperature = t_fine / 5120
 // =============================================================================
 
 float BMP280::compensateTemperature(
     int32_t rawTemperature)
 {
-    int32_t var1;
-    int32_t var2;
+    float var1 =
+        (static_cast<float>(rawTemperature) /
+             16384.0f -
+         static_cast<float>(dig_T1) /
+             1024.0f) *
+        static_cast<float>(dig_T2);
 
-    var1 =
-        ((((rawTemperature >> 3) -
-           (static_cast<int32_t>(dig_T1) << 1))) *
-         static_cast<int32_t>(dig_T2)) >>
-        11;
+    float var2 =
+        (static_cast<float>(rawTemperature) /
+             131072.0f -
+         static_cast<float>(dig_T1) /
+             8192.0f);
 
     var2 =
-        (((((rawTemperature >> 4) -
-            static_cast<int32_t>(dig_T1)) *
-           ((rawTemperature >> 4) -
-            static_cast<int32_t>(dig_T1))) >>
-          12) *
-         static_cast<int32_t>(dig_T3)) >>
-        14;
+        var2 *
+        var2 *
+        static_cast<float>(dig_T3);
 
     temperatureFine =
         var1 + var2;
 
-    int32_t temperature =
-        (temperatureFine * 5 + 128) >> 8;
+    float temperatureC =
+        temperatureFine /
+        5120.0f;
 
-    return temperature / 100.0f;
+    return temperatureC;
 }
 
 // =============================================================================
 // Pressure compensation
+//
+// Equivalent to the Python floating-point implementation.
 // =============================================================================
 
 float BMP280::compensatePressure(
     int32_t rawPressure)
 {
-    int64_t var1;
-    int64_t var2;
+    float var1 =
+        temperatureFine / 2.0f -
+        64000.0f;
 
-    var1 =
-        static_cast<int64_t>(temperatureFine) -
-        128000;
+    float var2 =
+        var1 *
+        var1 *
+        static_cast<float>(dig_P6) /
+        32768.0f;
+
+    var2 +=
+        var1 *
+        static_cast<float>(dig_P5) *
+        2.0f;
 
     var2 =
-        var1 *
-        var1 *
-        static_cast<int64_t>(dig_P6);
-
-    var2 +=
-        (var1 *
-         static_cast<int64_t>(dig_P5))
-        << 17;
-
-    var2 +=
-        static_cast<int64_t>(dig_P4)
-        << 35;
+        var2 / 4.0f +
+        static_cast<float>(dig_P4) *
+            65536.0f;
 
     var1 =
-        ((var1 *
-          var1 *
-          static_cast<int64_t>(dig_P3)) >>
-         8) +
-        ((var1 *
-          static_cast<int64_t>(dig_P2))
-         << 12);
+        (static_cast<float>(dig_P3) *
+             var1 *
+             var1 /
+             524288.0f +
+         static_cast<float>(dig_P2) *
+             var1) /
+        524288.0f;
 
     var1 =
-        (((static_cast<int64_t>(1) << 47) +
-          var1) *
-         static_cast<int64_t>(dig_P1)) >>
-        33;
+        (1.0f +
+         var1 / 32768.0f) *
+        static_cast<float>(dig_P1);
 
-    if (var1 == 0)
+    if (var1 == 0.0f)
     {
         return 0.0f;
     }
 
-    int64_t p =
-        1048576 -
-        static_cast<int64_t>(rawPressure);
+    float p =
+        1048576.0f -
+        static_cast<float>(rawPressure);
 
     p =
-        (((p << 31) - var2) * 3125) /
+        (p -
+         var2 / 4096.0f) *
+        6250.0f /
         var1;
 
-    var1 =
-        (static_cast<int64_t>(dig_P9) *
-         (p >> 13) *
-         (p >> 13)) >>
-        25;
+    p +=
+        (static_cast<float>(dig_P9) *
+             p *
+             p /
+             2147483648.0f +
+         p *
+             static_cast<float>(dig_P8) /
+             32768.0f +
+         static_cast<float>(dig_P7)) /
+        16.0f;
 
-    var2 =
-        (static_cast<int64_t>(dig_P8) *
-         p) >>
-        19;
-
-    p =
-        ((p + var1 + var2) >> 8) +
-        (static_cast<int64_t>(dig_P7) << 4);
-
-    return p / 256.0f;
+    return p;
 }
 
 // =============================================================================
-// Read single register
+// Altitude
+//
+// Python:
+//
+// 44330.0 * (1.0 - (pressure / sea_level) ** 0.1903)
+// =============================================================================
+
+float BMP280::altitudeFromPressure(
+    float pressureHpa)
+{
+    if (pressureHpa <= 0.0f ||
+        seaLevelHpa <= 0.0f)
+    {
+        return 0.0f;
+    }
+
+    return 44330.0f *
+           (1.0f -
+            std::pow(
+                pressureHpa /
+                    seaLevelHpa,
+                0.1903f));
+}
+
+// =============================================================================
+// Test
+//
+// Equivalent to:
+//
+// start = time.ticks_ms()
+//
+// while timeout:
+//
+//     if update():
+//         samples += 1
+//
+//     if samples >= 3:
+//         return True
+//
+//     sleep_ms(200)
+// =============================================================================
+
+bool BMP280::test(
+    uint32_t timeoutMs)
+{
+    if (!initialized)
+    {
+        return false;
+    }
+
+    absolute_time_t start =
+        get_absolute_time();
+
+    uint32_t samples = 0;
+
+    while (
+        absolute_time_diff_us(
+            start,
+            get_absolute_time()) <
+        static_cast<int64_t>(timeoutMs) * 1000)
+    {
+        Measurements measurements{};
+
+        if (read(measurements))
+        {
+            samples++;
+
+            if (samples >= 3)
+            {
+                return true;
+            }
+        }
+
+        /*
+         * Same sampling interval as Python.
+         */
+
+        sleep_ms(200);
+    }
+
+    return false;
+}
+
+// =============================================================================
+// Read register
 // =============================================================================
 
 bool BMP280::readRegister(
@@ -878,7 +917,7 @@ bool BMP280::readRegister(
 }
 
 // =============================================================================
-// Write single register
+// Write register
 // =============================================================================
 
 bool BMP280::writeRegister(
@@ -894,27 +933,14 @@ bool BMP280::writeRegister(
         bus.write(
             address,
             data,
-            sizeof(data),
+            2,
             false);
 
-    if (result !=
-        static_cast<int>(sizeof(data)))
-    {
-        printf(
-            "BMP280: register write failed "
-            "REG=0x%02X VALUE=0x%02X RESULT=%d\n",
-            reg,
-            value,
-            result);
-
-        return false;
-    }
-
-    return true;
+    return result == 2;
 }
 
 // =============================================================================
-// Read multiple registers
+// Read registers
 // =============================================================================
 
 bool BMP280::readRegisters(
@@ -936,18 +962,6 @@ bool BMP280::readRegisters(
             data,
             length);
 
-    if (result !=
-        static_cast<int>(length))
-    {
-        printf(
-            "BMP280: register read failed "
-            "REG=0x%02X LENGTH=%lu RESULT=%d\n",
-            reg,
-            static_cast<unsigned long>(length),
-            result);
-
-        return false;
-    }
-
-    return true;
+    return result ==
+           static_cast<int>(length);
 }

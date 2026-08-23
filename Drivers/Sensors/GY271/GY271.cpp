@@ -24,126 +24,207 @@ bool GY271::initialize()
 {
     initialized = false;
 
-    printf("GY271: initializing...\n");
+    printf("\n");
+    printf("==============================\n");
+    printf(" GY271 HMC5883L INITIALIZATION\n");
+    printf("==============================\n");
 
-    // -------------------------------------------------------------------------
-    // Check I2C communication
-    // -------------------------------------------------------------------------
+    printf(
+        "GY271: checking address 0x%02X...\n",
+        address);
+
+    // =========================================================================
+    // Check connection
+    // =========================================================================
 
     if (!isConnected())
     {
-        printf("GY271: connection failed\n");
+        printf(
+            "GY271: device not found at 0x%02X\n",
+            address);
+
         return false;
     }
 
-    printf("GY271: connection OK\n");
+    printf(
+        "GY271: device found at 0x%02X\n",
+        address);
 
-    // -------------------------------------------------------------------------
-    // Read initial register state
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // Read device ID
+    // =========================================================================
 
-    uint8_t control1 = 0;
+    uint8_t idA = 0;
+    uint8_t idB = 0;
+    uint8_t idC = 0;
 
-    if (readRegister(
-            REG_CONTROL_1,
-            control1))
+    if (!readRegister(
+            REG_ID_A,
+            idA))
+    {
+        printf("GY271: failed to read ID A\n");
+        return false;
+    }
+
+    if (!readRegister(
+            REG_ID_B,
+            idB))
+    {
+        printf("GY271: failed to read ID B\n");
+        return false;
+    }
+
+    if (!readRegister(
+            REG_ID_C,
+            idC))
+    {
+        printf("GY271: failed to read ID C\n");
+        return false;
+    }
+
+    printf(
+        "GY271: ID = 0x%02X 0x%02X 0x%02X\n",
+        idA,
+        idB,
+        idC);
+
+    // =========================================================================
+    // Verify ID
+    // =========================================================================
+
+    if (idA != ID_A ||
+        idB != ID_B ||
+        idC != ID_C)
     {
         printf(
-            "GY271: initial CONTROL_1 = 0x%02X\n",
-            control1);
-    }
+            "GY271: unexpected device ID!\n");
 
-    // -------------------------------------------------------------------------
-    // Soft reset
-    // -------------------------------------------------------------------------
+        printf(
+            "GY271: expected 0x48 0x34 0x33\n");
 
-    printf("GY271: resetting...\n");
-
-    if (!writeRegister(
-            REG_CONTROL_2,
-            CONTROL_2_SOFT_RESET))
-    {
-        printf("GY271: reset failed\n");
         return false;
     }
 
-    sleep_ms(10);
+    printf(
+        "GY271: HMC5883L identified successfully\n");
 
-    // -------------------------------------------------------------------------
-    // SET/RESET period
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // Configure CONFIG_A
+    // =========================================================================
+
+    printf(
+        "GY271: configuring CONFIG_A = 0x%02X\n",
+        CONFIG_A_8_AVG_15HZ);
 
     if (!writeRegister(
-            REG_SET_RESET,
-            0x01))
+            REG_CONFIG_A,
+            CONFIG_A_8_AVG_15HZ))
     {
-        printf("GY271: SET_RESET failed\n");
+        printf(
+            "GY271: CONFIG_A write failed\n");
+
         return false;
     }
 
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // Configure CONFIG_B
+    // =========================================================================
+
+    printf(
+        "GY271: configuring CONFIG_B = 0x%02X\n",
+        CONFIG_B_GAIN_1_3GA);
+
+    if (!writeRegister(
+            REG_CONFIG_B,
+            CONFIG_B_GAIN_1_3GA))
+    {
+        printf(
+            "GY271: CONFIG_B write failed\n");
+
+        return false;
+    }
+
+    // =========================================================================
     // Configure continuous measurement
-    // -------------------------------------------------------------------------
+    // =========================================================================
 
     printf(
-        "GY271: writing CONTROL_1 = 0x%02X\n",
-        CONTROL_1_CONTINUOUS_200HZ);
+        "GY271: configuring continuous measurement\n");
 
     if (!writeRegister(
-            REG_CONTROL_1,
-            CONTROL_1_CONTINUOUS_200HZ))
+            REG_MODE,
+            MODE_CONTINUOUS))
     {
-        printf("GY271: CONTROL_1 write failed\n");
+        printf(
+            "GY271: MODE write failed\n");
+
         return false;
     }
 
-    sleep_ms(10);
+    // =========================================================================
+    // Allow sensor to start measurements
+    // =========================================================================
 
-    // -------------------------------------------------------------------------
-    // Read CONTROL_1 back
-    // -------------------------------------------------------------------------
+    sleep_ms(100);
 
-    control1 = 0;
+    // =========================================================================
+    // Read configuration back
+    // =========================================================================
+
+    uint8_t configA = 0;
+    uint8_t configB = 0;
+    uint8_t mode = 0;
 
     if (!readRegister(
-            REG_CONTROL_1,
-            control1))
+            REG_CONFIG_A,
+            configA))
     {
-        printf("GY271: CONTROL_1 read failed\n");
+        printf(
+            "GY271: CONFIG_A read failed\n");
+
+        return false;
+    }
+
+    if (!readRegister(
+            REG_CONFIG_B,
+            configB))
+    {
+        printf(
+            "GY271: CONFIG_B read failed\n");
+
+        return false;
+    }
+
+    if (!readRegister(
+            REG_MODE,
+            mode))
+    {
+        printf(
+            "GY271: MODE read failed\n");
+
         return false;
     }
 
     printf(
-        "GY271: CONTROL_1 = 0x%02X\n",
-        control1);
-
-    // -------------------------------------------------------------------------
-    // Read STATUS
-    // -------------------------------------------------------------------------
-
-    uint8_t status = 0;
-
-    if (!readRegister(
-            REG_STATUS,
-            status))
-    {
-        printf("GY271: STATUS read failed\n");
-        return false;
-    }
+        "GY271: CONFIG_A = 0x%02X\n",
+        configA);
 
     printf(
-        "GY271: STATUS = 0x%02X\n",
-        status);
+        "GY271: CONFIG_B = 0x%02X\n",
+        configB);
 
-    // -------------------------------------------------------------------------
-    // Do NOT require DRDY during initialization.
-    //
-    // The sensor may need some time before the first measurement.
-    // -------------------------------------------------------------------------
+    printf(
+        "GY271: MODE      = 0x%02X\n",
+        mode);
+
+    // =========================================================================
+    // Initialization complete
+    // =========================================================================
 
     initialized = true;
 
-    printf("GY271: initialized\n");
+    printf(
+        "GY271: initialization successful\n");
 
     return true;
 }
@@ -162,9 +243,9 @@ bool GY271::readRaw(
         return false;
     }
 
-    // -------------------------------------------------------------------------
-    // Read status
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // Check data ready
+    // =========================================================================
 
     uint8_t status = 0;
 
@@ -172,71 +253,70 @@ bool GY271::readRaw(
             REG_STATUS,
             status))
     {
-        printf("GY271: status read failed\n");
-        return false;
-    }
-
-    // -------------------------------------------------------------------------
-    // Data ready?
-    // -------------------------------------------------------------------------
-
-    if (!(status & STATUS_DRDY))
-    {
-        // This is not necessarily an error.
-        //
-        // The sensor may simply not have produced a new sample yet.
-        return false;
-    }
-
-    // -------------------------------------------------------------------------
-    // Magnetic overflow
-    // -------------------------------------------------------------------------
-
-    if (status & STATUS_OVL)
-    {
         printf(
-            "GY271: magnetic overflow, STATUS=0x%02X\n",
-            status);
+            "GY271: STATUS read failed\n");
 
-        // Do not use saturated data.
         return false;
     }
 
-    // -------------------------------------------------------------------------
-    // Read X/Y/Z
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // Check RDY bit
+    // =========================================================================
+
+    if (!(status & STATUS_RDY))
+    {
+        return false;
+    }
+
+    // =========================================================================
+    // Read six data registers
+    //
+    // HMC5883L register order:
+    //
+    // 0x03 X MSB
+    // 0x04 X LSB
+    // 0x05 Z MSB
+    // 0x06 Z LSB
+    // 0x07 Y MSB
+    // 0x08 Y LSB
+    // =========================================================================
 
     uint8_t data[6] = {};
 
     if (!readRegisters(
-            REG_X_LSB,
+            REG_DATA_X_MSB,
             data,
             sizeof(data)))
     {
-        printf("GY271: magnetic data read failed\n");
+        printf(
+            "GY271: magnetic data read failed\n");
+
         return false;
     }
 
-    // QMC5883L:
-    //
-    // X LSB
-    // X MSB
-    // Y LSB
-    // Y MSB
-    // Z LSB
-    // Z MSB
+    // =========================================================================
+    // X
+    // =========================================================================
 
     x = static_cast<int16_t>(
-        static_cast<uint16_t>(data[1]) << 8 |
-        data[0]);
+        (static_cast<uint16_t>(data[0]) << 8) |
+        data[1]);
 
-    y = static_cast<int16_t>(
-        static_cast<uint16_t>(data[3]) << 8 |
-        data[2]);
+    // =========================================================================
+    // Z
+    // =========================================================================
 
     z = static_cast<int16_t>(
-        static_cast<uint16_t>(data[5]) << 8 |
-        data[4]);
+        (static_cast<uint16_t>(data[2]) << 8) |
+        data[3]);
+
+    // =========================================================================
+    // Y
+    // =========================================================================
+
+    y = static_cast<int16_t>(
+        (static_cast<uint16_t>(data[4]) << 8) |
+        data[5]);
 
     return true;
 }
@@ -260,9 +340,14 @@ bool GY271::read(
         return false;
     }
 
-    field.x = static_cast<float>(x) * scale;
-    field.y = static_cast<float>(y) * scale;
-    field.z = static_cast<float>(z) * scale;
+    field.x =
+        static_cast<float>(x) * scale;
+
+    field.y =
+        static_cast<float>(y) * scale;
+
+    field.z =
+        static_cast<float>(z) * scale;
 
     return true;
 }
@@ -273,20 +358,34 @@ bool GY271::read(
 
 bool GY271::isConnected()
 {
-    uint8_t value = 0;
+    uint8_t idA = 0;
+    uint8_t idB = 0;
+    uint8_t idC = 0;
 
-    // -------------------------------------------------------------------------
-    // There is no reliable WHO_AM_I register on the QMC5883L.
-    //
-    // Therefore perform an actual I2C transaction.
-    //
-    // STATUS is a better register to use than CONTROL_1 because we don't
-    // depend on a particular power/configuration state.
-    // -------------------------------------------------------------------------
+    if (!readRegister(
+            REG_ID_A,
+            idA))
+    {
+        return false;
+    }
 
-    return readRegister(
-        REG_STATUS,
-        value);
+    if (!readRegister(
+            REG_ID_B,
+            idB))
+    {
+        return false;
+    }
+
+    if (!readRegister(
+            REG_ID_C,
+            idC))
+    {
+        return false;
+    }
+
+    return idA == ID_A &&
+           idB == ID_B &&
+           idC == ID_C;
 }
 
 // =============================================================================

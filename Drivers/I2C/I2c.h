@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "hardware/i2c.h"
+
 #include "II2c.h"
 
 class I2c : public II2c
@@ -34,9 +35,6 @@ public:
         uint32_t txLength,
         uint8_t *rxData,
         uint32_t rxLength) override;
-
-private:
-    bool recoverBus();
 
 private:
     i2c_inst_t *i2cInstance;

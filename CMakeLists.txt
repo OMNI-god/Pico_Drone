@@ -201,6 +201,7 @@ target_include_directories(ADXL345 PUBLIC
 
 target_link_libraries(ADXL345 PUBLIC
     II2c
+    pico_stdlib
 )
 
 # ====================================================================================
