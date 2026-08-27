@@ -34,10 +34,11 @@ int main()
     if (!i2c.initialize())
     {
         printf("I2C initialization FAILED\n");
-        // while (true)
-        // {
-        //     sleep_ms(1000);
-        // }
+
+        while (true)
+        {
+            sleep_ms(1000);
+        }
     }
 
     printf("I2C initialized\n");
@@ -49,104 +50,112 @@ int main()
     // --------------------------------------------------
 
     ICM20948 imu(i2c);
-
     GY271 magnetometer(i2c);
-
     BMP280 barometer(i2c);
-
     ADXL345 accelerometer(i2c);
 
-    barometer.initialize();
+    // --------------------------------------------------
+    // Sensor Manager
+    // --------------------------------------------------
+
+    SensorManager sensors(
+        imu,
+        magnetometer,
+        barometer,
+        accelerometer);
+
+    printf("\nInitializing SensorManager...\n");
+
+    if (!sensors.initialize())
+    {
+        printf("\nSensorManager initialization FAILED\n");
+
+        while (true)
+        {
+            sleep_ms(1000);
+        }
+    }
+
+    printf("\nSensorManager initialized successfully!\n");
+
+    // --------------------------------------------------
+    // Read sensors
+    // --------------------------------------------------
+
+    SensorManager::SensorData data;
 
     while (true)
     {
-        BMP280::Measurements data{};
-
-        if (barometer.read(data))
+        if (sensors.read(data))
         {
+            printf("\n");
+            printf("==============================\n");
+            printf("        SENSOR DATA\n");
+            printf("==============================\n");
+
+            // --------------------------------------------------
+            // ICM20948
+            // --------------------------------------------------
+
+            printf("\n[ ICM20948 ]\n");
+
             printf(
-                "BMP280: %.2f C, %.2f hPa\n",
-                data.temperatureC,
-                data.pressureHpa);
+                "Accel : X=%7.3f Y=%7.3f Z=%7.3f g\n",
+                data.imu.acceleration.x,
+                data.imu.acceleration.y,
+                data.imu.acceleration.z);
+
+            printf(
+                "Gyro  : X=%7.3f Y=%7.3f Z=%7.3f dps\n",
+                data.imu.gyroscope.x,
+                data.imu.gyroscope.y,
+                data.imu.gyroscope.z);
+
+            // --------------------------------------------------
+            // GY-271
+            // --------------------------------------------------
+
+            printf("\n[ GY-271 MAGNETOMETER ]\n");
+
+            printf(
+                "Mag   : X=%7.3f Y=%7.3f Z=%7.3f G\n",
+                data.magnetometer.x,
+                data.magnetometer.y,
+                data.magnetometer.z);
+
+            // --------------------------------------------------
+            // BMP280
+            // --------------------------------------------------
+
+            printf("\n[ BMP280 ]\n");
+
+            printf(
+                "Temp  : %7.2f C\n",
+                data.barometer.temperatureC);
+
+            printf(
+                "Press : %7.2f hPa\n",
+                data.barometer.pressureHpa);
+
+            // --------------------------------------------------
+            // ADXL345
+            // --------------------------------------------------
+
+            printf("\n[ ADXL345 ]\n");
+
+            printf(
+                "Accel : X=%7.3f Y=%7.3f Z=%7.3f g\n",
+                data.externalAccelerometer.x,
+                data.externalAccelerometer.y,
+                data.externalAccelerometer.z);
+
+            printf("\n==============================\n");
         }
         else
         {
-            printf("BMP280 READ FAILED\n");
+            printf("\nSensorManager::read() FAILED\n");
         }
 
-        sleep_ms(1000);
+        sleep_ms(100);
     }
-
-    // // --------------------------------------------------
-    // // Sensor Manager
-    // // --------------------------------------------------
-
-    // SensorManager sensors(
-    //     imu,
-    //     magnetometer,
-    //     barometer,
-    //     accelerometer);
-
-    // printf("\nInitializing SensorManager...\n");
-
-    // if (!sensors.initialize())
-    // {
-    //     printf("\nSensorManager initialization FAILED\n");
-
-    //     while (true)
-    //     {
-    //         sleep_ms(1000);
-    //     }
-    // }
-
-    // printf("\nSensorManager initialized successfully!\n");
-
-    // // --------------------------------------------------
-    // // Read sensors
-    // // --------------------------------------------------
-
-    // SensorManager::SensorData data;
-
-    // while (true)
-    // {
-    //     if (sensors.read(data))
-    //     {
-    //         printf("\n--- Sensor Data ---\n");
-
-    //         printf(
-    //             "IMU Accel: X=%.3f Y=%.3f Z=%.3f g\n",
-    //             data.imu.acceleration.x,
-    //             data.imu.acceleration.y,
-    //             data.imu.acceleration.z);
-
-    //         printf(
-    //             "IMU Gyro:  X=%.3f Y=%.3f Z=%.3f dps\n",
-    //             data.imu.gyroscope.x,
-    //             data.imu.gyroscope.y,
-    //             data.imu.gyroscope.z);
-
-    //         printf(
-    //             "MAG:       X=%.3f Y=%.3f Z=%.3f G\n",
-    //             data.magnetometer.x,
-    //             data.magnetometer.y,
-    //             data.magnetometer.z);
-
-    //         printf(
-    //             "BARO:      Pressure=%.2f Pa Temp=%.2f C\n",
-    //             data.barometer.pressureHpa,
-    //             data.barometer.temperatureC);
-
-    //         printf(
-    //             "ADXL:      X=%.3f Y=%.3f Z=%.3f g\n",
-    //             data.externalAccelerometer.x,
-    //             data.externalAccelerometer.y,
-    //             data.externalAccelerometer.z);
-    //     }
-    //     else
-    //     {
-    //         printf("SensorManager::read() FAILED\n");
-    //     }
-
-    //     sleep_ms(100);
-    // }
 }
