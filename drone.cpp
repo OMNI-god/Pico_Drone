@@ -1,13 +1,56 @@
 #include <cstdio>
+#include <cstdint>
 
 #include "pico/stdlib.h"
 
-#include "I2c.h"
-#include "ICM20948.h"
-#include "GY271.h"
-#include "BMP280.h"
-#include "ADXL345.h"
-#include "SensorManager.h"
+#include "Elrs.h"
+#include "CrsfParser.h"
+#include "RCInput.h"
+
+// ============================================================
+// ELRS / CRSF configuration
+// ============================================================
+
+#define CRSF_UART uart1
+#define CRSF_BAUDRATE 420000
+
+#define UART_TX_PIN 4
+#define UART_RX_PIN 5
+
+// ============================================================
+// CRSF configuration
+// ============================================================
+
+constexpr uint8_t CRSF_CHANNEL_COUNT = 16;
+
+// ============================================================
+// Print all 16 raw CRSF channels
+// ============================================================
+
+static void printRawChannels(const CrsfParser &crsf)
+{
+    const uint16_t *channels = crsf.channels();
+
+    printf("\n");
+    printf("------------------------------------------------------------\n");
+    printf("                    CRSF RAW CHANNELS\n");
+    printf("------------------------------------------------------------\n");
+
+    for (uint8_t i = 0; i < CRSF_CHANNEL_COUNT; ++i)
+    {
+        printf(
+            "CH%02d: %4u%s",
+            i + 1,
+            channels[i],
+            ((i + 1) % 4 == 0) ? "\n" : " | ");
+    }
+
+    printf("------------------------------------------------------------\n");
+}
+
+// ============================================================
+// Main
+// ============================================================
 
 int main()
 {
@@ -16,24 +59,32 @@ int main()
     sleep_ms(2000);
 
     printf("\n");
-    printf("==============================\n");
-    printf(" SensorManager Test\n");
-    printf("==============================\n");
+    printf("============================================================\n");
+    printf("                 ELRS RC INPUT TEST\n");
+    printf("============================================================\n");
 
-    // --------------------------------------------------
-    // I2C
-    // --------------------------------------------------
+    printf("UART       : UART1\n");
+    printf("Baudrate   : 420000\n");
+    printf("Format     : 8N1\n");
+    printf("TX         : GPIO %d\n", UART_TX_PIN);
+    printf("RX         : GPIO %d\n", UART_RX_PIN);
+    printf("Channels   : %d\n", CRSF_CHANNEL_COUNT);
 
-    I2c i2c(
-        i2c1,
-        400000,
-        3, // SDA
-        2  // SCL
-    );
+    printf("============================================================\n\n");
 
-    if (!i2c.initialize())
+    // ========================================================
+    // Initialize ELRS UART
+    // ========================================================
+
+    Elrs elrs(
+        CRSF_UART,
+        CRSF_BAUDRATE,
+        UART_RX_PIN,
+        UART_TX_PIN);
+
+    if (!elrs.initialize())
     {
-        printf("I2C initialization FAILED\n");
+        printf("ERROR: ELRS initialization failed!\n");
 
         while (true)
         {
@@ -41,121 +92,175 @@ int main()
         }
     }
 
-    printf("I2C initialized\n");
-    printf("SDA = GPIO 3\n");
-    printf("SCL = GPIO 2\n");
+    printf("ELRS UART initialized.\n");
 
-    // --------------------------------------------------
-    // Sensors
-    // --------------------------------------------------
+    // ========================================================
+    // CRSF parser
+    // ========================================================
 
-    ICM20948 imu(i2c);
-    GY271 magnetometer(i2c);
-    BMP280 barometer(i2c);
-    ADXL345 accelerometer(i2c);
+    CrsfParser crsf;
 
-    // --------------------------------------------------
-    // Sensor Manager
-    // --------------------------------------------------
+    printf("CRSF parser initialized.\n");
 
-    SensorManager sensors(
-        imu,
-        magnetometer,
-        barometer,
-        accelerometer);
+    // ========================================================
+    // RC input processing
+    // ========================================================
 
-    printf("\nInitializing SensorManager...\n");
+    RCInput rcInput;
 
-    if (!sensors.initialize())
-    {
-        printf("\nSensorManager initialization FAILED\n");
+    printf("RCInput initialized.\n");
+    printf("Waiting for receiver data...\n\n");
 
-        while (true)
-        {
-            sleep_ms(1000);
-        }
-    }
+    // ========================================================
+    // Runtime variables
+    // ========================================================
 
-    printf("\nSensorManager initialized successfully!\n");
+    uint8_t byte = 0;
 
-    // --------------------------------------------------
-    // Read sensors
-    // --------------------------------------------------
+    uint32_t lastPrintTime = 0;
 
-    SensorManager::SensorData data;
+    uint32_t lastFrameTime = 0;
+
+    uint32_t frameCount = 0;
+
+    // ========================================================
+    // Main loop
+    // ========================================================
 
     while (true)
     {
-        if (sensors.read(data))
+        // ----------------------------------------------------
+        // Read all available UART bytes
+        // ----------------------------------------------------
+
+        while (elrs.available())
         {
+            if (elrs.read(&byte, 1) == 1)
+            {
+                // --------------------------------------------
+                // Feed byte into CRSF parser
+                // --------------------------------------------
+
+                if (crsf.processByte(byte))
+                {
+                    uint32_t now =
+                        to_ms_since_boot(
+                            get_absolute_time());
+
+                    // ----------------------------------------
+                    // Valid CRSF frame received
+                    // ----------------------------------------
+
+                    rcInput.update(
+                        crsf.channels(),
+                        now);
+
+                    lastFrameTime = now;
+
+                    frameCount++;
+                }
+            }
+        }
+
+        // ----------------------------------------------------
+        // Current time
+        // ----------------------------------------------------
+
+        uint32_t now =
+            to_ms_since_boot(
+                get_absolute_time());
+
+        // ====================================================
+        // Print every 100 ms
+        // ====================================================
+
+        if (now - lastPrintTime >= 100)
+        {
+            lastPrintTime = now;
+
+            // ------------------------------------------------
+            // Raw CRSF channels
+            // ------------------------------------------------
+
+            const uint16_t *channels = crsf.channels();
+
             printf("\n");
-            printf("==============================\n");
-            printf("        SENSOR DATA\n");
-            printf("==============================\n");
+            printf(
+                "RAW: "
+                "CH1=%4u "
+                "CH2=%4u "
+                "CH3=%4u "
+                "CH4=%4u\n",
 
-            // --------------------------------------------------
-            // ICM20948
-            // --------------------------------------------------
-
-            printf("\n[ ICM20948 ]\n");
+                channels[0],
+                channels[1],
+                channels[2],
+                channels[3]);
 
             printf(
-                "Accel : X=%7.3f Y=%7.3f Z=%7.3f g\n",
-                data.imu.acceleration.x,
-                data.imu.acceleration.y,
-                data.imu.acceleration.z);
+                "     "
+                "CH5=%4u "
+                "CH6=%4u "
+                "CH7=%4u "
+                "CH8=%4u\n",
+
+                channels[4],
+                channels[5],
+                channels[6],
+                channels[7]);
 
             printf(
-                "Gyro  : X=%7.3f Y=%7.3f Z=%7.3f dps\n",
-                data.imu.gyroscope.x,
-                data.imu.gyroscope.y,
-                data.imu.gyroscope.z);
+                "     "
+                "CH9=%4u "
+                "CH10=%4u "
+                "CH11=%4u "
+                "CH12=%4u\n",
 
-            // --------------------------------------------------
-            // GY-271
-            // --------------------------------------------------
-
-            printf("\n[ GY-271 MAGNETOMETER ]\n");
-
-            printf(
-                "Mag   : X=%7.3f Y=%7.3f Z=%7.3f G\n",
-                data.magnetometer.x,
-                data.magnetometer.y,
-                data.magnetometer.z);
-
-            // --------------------------------------------------
-            // BMP280
-            // --------------------------------------------------
-
-            printf("\n[ BMP280 ]\n");
+                channels[8],
+                channels[9],
+                channels[10],
+                channels[11]);
 
             printf(
-                "Temp  : %7.2f C\n",
-                data.barometer.temperatureC);
+                "     "
+                "CH13=%4u "
+                "CH14=%4u "
+                "CH15=%4u "
+                "CH16=%4u\n",
+
+                channels[12],
+                channels[13],
+                channels[14],
+                channels[15]);
+
+            // ------------------------------------------------
+            // RC processed state
+            // ------------------------------------------------
+
+            /*
+             * Do not use the old RCChannels type here.
+             *
+             * Your current RCInput implementation exposes
+             * its state through its current API.
+             */
 
             printf(
-                "Press : %7.2f hPa\n",
-                data.barometer.pressureHpa);
+                "Frames: %lu | "
+                "Last frame: %lu ms ago | "
+                "Failsafe: %d\n",
 
-            // --------------------------------------------------
-            // ADXL345
-            // --------------------------------------------------
+                static_cast<unsigned long>(frameCount),
 
-            printf("\n[ ADXL345 ]\n");
+                static_cast<unsigned long>(
+                    now - lastFrameTime),
 
-            printf(
-                "Accel : X=%7.3f Y=%7.3f Z=%7.3f g\n",
-                data.externalAccelerometer.x,
-                data.externalAccelerometer.y,
-                data.externalAccelerometer.z);
-
-            printf("\n==============================\n");
+                rcInput.isFailsafe());
         }
-        else
-        {
-            printf("\nSensorManager::read() FAILED\n");
-        }
 
-        sleep_ms(100);
+        // ----------------------------------------------------
+        // Small CPU yield
+        // ----------------------------------------------------
+
+        sleep_us(100);
     }
 }

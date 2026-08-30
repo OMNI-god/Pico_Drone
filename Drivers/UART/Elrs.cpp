@@ -67,3 +67,11 @@ int Elrs::read(
 
     return count;
 }
+
+bool Elrs::available()
+{
+    if (!initialized)
+        return false;
+
+    return uart_is_readable(uartInstance);
+}
