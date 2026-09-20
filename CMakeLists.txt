@@ -551,6 +551,56 @@ target_link_libraries(FlightControl PUBLIC
     RCInput
 )
 
+## ====================================================================================
+# Flight / Safety
+# ====================================================================================
+#
+# Safety Manager
+#
+#     RCState -----------+
+#                        |
+#     RCHealth ----------+----> SafetyManager
+#                        |
+#     IMUSnapshot --------+
+#                        |
+#                        v
+#                  SafetySnapshot
+#
+# Responsibilities:
+#
+#     - RC validity
+#     - RC failsafe
+#     - RC link health
+#     - throttle-low validation
+#     - arm switch validation
+#     - IMU validity
+#     - IMU calibration
+#     - IMU data freshness
+#     - armed/disarmed/failsafe state
+#
+# Safety does NOT command motors.
+#
+# ====================================================================================
+
+add_library(Safety
+    Flight/Safety/SafetyManager.cpp
+    Flight/Safety/SafetyPublisher.cpp
+    Flight/Safety/SafetyTask.cpp
+)
+
+target_include_directories(Safety PUBLIC
+    ${FLIGHT_DIR}/Safety
+    ${FLIGHT_DIR}/RC
+    ${FLIGHT_DIR}/Sensor
+)
+
+target_link_libraries(Safety PUBLIC
+    pico_stdlib
+    RCInput
+    FlightSensor
+    freertos_config
+    FreeRTOS-Kernel
+)
 
 # ====================================================================================
 # Main Executable
@@ -659,6 +709,13 @@ target_link_libraries(drone PRIVATE
     # ----------------------------------------------------------------------------
 
     FlightControl
+
+
+    # ----------------------------------------------------------------------------
+    # Flight Control
+    # ----------------------------------------------------------------------------
+
+    Safety
 
 
     # ----------------------------------------------------------------------------
