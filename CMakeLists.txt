@@ -1,6 +1,5 @@
 # ====================================================================================
 # Raspberry Pi Pico VS Code Extension
-# DO NOT EDIT THE FOLLOWING LINES
 # ====================================================================================
 
 if(WIN32)
@@ -79,6 +78,7 @@ set(MANAGERS_DIR
 # Interfaces
 # ====================================================================================
 
+
 # ------------------------------------------------------------------------------------
 # IPwm
 # ------------------------------------------------------------------------------------
@@ -117,18 +117,22 @@ target_include_directories(IUart INTERFACE
 # ====================================================================================
 
 add_library(I2c
+
     Drivers/I2C/I2c.cpp
 )
 
 target_include_directories(I2c PUBLIC
+
     ${DRIVERS_DIR}/I2C
     ${INTERFACES_DIR}
 )
 
 target_link_libraries(I2c PUBLIC
+
     pico_stdlib
     hardware_i2c
     hardware_gpio
+
     II2c
 )
 
@@ -138,18 +142,22 @@ target_link_libraries(I2c PUBLIC
 # ====================================================================================
 
 add_library(Elrs
+
     Drivers/UART/Elrs.cpp
 )
 
 target_include_directories(Elrs PUBLIC
+
     ${DRIVERS_DIR}/UART
     ${INTERFACES_DIR}
 )
 
 target_link_libraries(Elrs PUBLIC
+
     pico_stdlib
     hardware_uart
     hardware_gpio
+
     IUart
 )
 
@@ -159,17 +167,21 @@ target_link_libraries(Elrs PUBLIC
 # ====================================================================================
 
 add_library(Esc
+
     Drivers/PWM/Esc.cpp
 )
 
 target_include_directories(Esc PUBLIC
+
     ${DRIVERS_DIR}/PWM
 )
 
 target_link_libraries(Esc PUBLIC
+
     pico_stdlib
     hardware_pwm
     hardware_clocks
+
     IPwm
 )
 
@@ -179,17 +191,21 @@ target_link_libraries(Esc PUBLIC
 # ====================================================================================
 
 add_library(Servo
+
     Drivers/PWM/Servo.cpp
 )
 
 target_include_directories(Servo PUBLIC
+
     ${DRIVERS_DIR}/PWM
 )
 
 target_link_libraries(Servo PUBLIC
+
     pico_stdlib
     hardware_pwm
     hardware_clocks
+
     IPwm
 )
 
@@ -204,15 +220,18 @@ target_link_libraries(Servo PUBLIC
 # ------------------------------------------------------------------------------------
 
 add_library(ADXL345
+
     Drivers/Sensors/ADXL345/ADXL345.cpp
 )
 
 target_include_directories(ADXL345 PUBLIC
+
     ${DRIVERS_DIR}/Sensors/ADXL345
     ${INTERFACES_DIR}
 )
 
 target_link_libraries(ADXL345 PUBLIC
+
     II2c
     pico_stdlib
 )
@@ -223,15 +242,18 @@ target_link_libraries(ADXL345 PUBLIC
 # ------------------------------------------------------------------------------------
 
 add_library(BMP280
+
     Drivers/Sensors/BMP280/BMP280.cpp
 )
 
 target_include_directories(BMP280 PUBLIC
+
     ${DRIVERS_DIR}/Sensors/BMP280
     ${INTERFACES_DIR}
 )
 
 target_link_libraries(BMP280 PUBLIC
+
     II2c
     pico_stdlib
 )
@@ -242,15 +264,18 @@ target_link_libraries(BMP280 PUBLIC
 # ------------------------------------------------------------------------------------
 
 add_library(GY271
+
     Drivers/Sensors/GY271/GY271.cpp
 )
 
 target_include_directories(GY271 PUBLIC
+
     ${DRIVERS_DIR}/Sensors/GY271
     ${INTERFACES_DIR}
 )
 
 target_link_libraries(GY271 PUBLIC
+
     II2c
     pico_stdlib
 )
@@ -261,15 +286,18 @@ target_link_libraries(GY271 PUBLIC
 # ------------------------------------------------------------------------------------
 
 add_library(ICM20948
+
     Drivers/Sensors/ICM20948/ICM20948.cpp
 )
 
 target_include_directories(ICM20948 PUBLIC
+
     ${DRIVERS_DIR}/Sensors/ICM20948
     ${INTERFACES_DIR}
 )
 
 target_link_libraries(ICM20948 PUBLIC
+
     II2c
     pico_stdlib
 )
@@ -280,14 +308,24 @@ target_link_libraries(ICM20948 PUBLIC
 # ====================================================================================
 
 add_library(SensorManager
+
     Managers/Sensors/SensorManager.cpp
 )
 
 target_include_directories(SensorManager PUBLIC
+
     ${MANAGERS_DIR}/Sensors
+
+    ${DRIVERS_DIR}/Sensors/ICM20948
+    ${DRIVERS_DIR}/Sensors/GY271
+    ${DRIVERS_DIR}/Sensors/BMP280
+    ${DRIVERS_DIR}/Sensors/ADXL345
+
+    ${INTERFACES_DIR}
 )
 
 target_link_libraries(SensorManager PUBLIC
+
     ICM20948
     GY271
     BMP280
@@ -298,6 +336,7 @@ target_link_libraries(SensorManager PUBLIC
 # ====================================================================================
 # Flight / RC
 # ====================================================================================
+
 
 # ------------------------------------------------------------------------------------
 # CRSF + RC Input + CRSF Telemetry
@@ -332,11 +371,102 @@ add_library(RCInput
 )
 
 target_include_directories(RCInput PUBLIC
+
     ${FLIGHT_DIR}/RC
 )
 
 target_link_libraries(RCInput PUBLIC
+
     pico_stdlib
+)
+
+
+# ====================================================================================
+# Flight / Sensor Processing
+# ====================================================================================
+#
+# Hardware-independent sensor processing.
+#
+# ICM20948
+#     |
+#     +--> IMU Adapter
+#     |
+#     +--> IMU Calibration
+#     |
+#     +--> IMUState
+#
+# ------------------------------------------------------------------------------------
+
+add_library(FlightSensor
+
+    Flight/Sensor/IMUCalibration.cpp
+)
+
+target_include_directories(FlightSensor PUBLIC
+
+    ${FLIGHT_DIR}/Sensor
+
+    ${DRIVERS_DIR}/Sensors/ICM20948
+
+    ${INTERFACES_DIR}
+)
+
+target_link_libraries(FlightSensor PUBLIC
+
+    pico_stdlib
+
+    ICM20948
+)
+
+
+# ====================================================================================
+# Flight / Flight Control
+# ====================================================================================
+#
+# Flight control layer.
+#
+# RC Input
+#     |
+#     +--------------------+
+#                          |
+#                          v
+#                    FlightController
+#                          |
+#                          v
+#                       PID
+#                          |
+#                          v
+#                        Mixer
+#                          |
+#                          v
+#                         ESC
+#
+# ------------------------------------------------------------------------------------
+
+add_library(FlightControl
+
+    Flight/FlightControl/FlightController.cpp
+)
+
+target_include_directories(FlightControl PUBLIC
+
+    ${FLIGHT_DIR}/FlightControl
+
+    ${FLIGHT_DIR}/Sensor
+
+    ${FLIGHT_DIR}/RC
+
+    ${DRIVERS_DIR}/PWM
+
+    ${INTERFACES_DIR}
+)
+
+target_link_libraries(FlightControl PUBLIC
+
+    pico_stdlib
+
+    FlightSensor
+    RCInput
 )
 
 
@@ -386,13 +516,9 @@ target_link_libraries(drone PRIVATE
     # ----------------------------------------------------------------------------
 
     hardware_i2c
-
     hardware_pwm
-
     hardware_uart
-
     hardware_gpio
-
     hardware_clocks
 
 
@@ -401,9 +527,7 @@ target_link_libraries(drone PRIVATE
     # ----------------------------------------------------------------------------
 
     IPwm
-
     II2c
-
     IUart
 
 
@@ -412,16 +536,13 @@ target_link_libraries(drone PRIVATE
     # ----------------------------------------------------------------------------
 
     I2c
-
     Elrs
-
     Esc
-
     Servo
 
 
     # ----------------------------------------------------------------------------
-    # Flight
+    # Flight / RC
     # ----------------------------------------------------------------------------
 
     RCInput
@@ -432,19 +553,30 @@ target_link_libraries(drone PRIVATE
     # ----------------------------------------------------------------------------
 
     ADXL345
-
     BMP280
-
     GY271
-
     ICM20948
 
 
     # ----------------------------------------------------------------------------
-    # Managers
+    # Sensor Manager
     # ----------------------------------------------------------------------------
 
     SensorManager
+
+
+    # ----------------------------------------------------------------------------
+    # Flight Sensor Processing
+    # ----------------------------------------------------------------------------
+
+    FlightSensor
+
+
+    # ----------------------------------------------------------------------------
+    # Flight Control
+    # ----------------------------------------------------------------------------
+
+    FlightControl
 
 
     # ----------------------------------------------------------------------------
@@ -452,7 +584,6 @@ target_link_libraries(drone PRIVATE
     # ----------------------------------------------------------------------------
 
     FreeRTOS-Kernel
-
     FreeRTOS-Kernel-Heap4
 )
 
@@ -473,12 +604,16 @@ pico_enable_stdio_uart(drone 0)
 # ====================================================================================
 
 pico_set_program_name(
+
     drone
+
     "drone"
 )
 
 pico_set_program_version(
+
     drone
+
     "0.1"
 )
 

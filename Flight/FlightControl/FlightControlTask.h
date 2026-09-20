@@ -2,6 +2,7 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
+#include <cstdint>
 
 class FlightControlTask
 {
