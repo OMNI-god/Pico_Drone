@@ -1,32 +1,29 @@
 #include "RCInput.h"
 
 #include <algorithm>
+#include <cmath>
 
-RCInput::RCInput(
-    const RCConfig &config)
-    : _config(config)
+RCInput::RCInput(const RCConfig &config)
+    : _config(config),
+      _state{}
 {
-    _state = RCState{};
     _state.failsafe = true;
+    _state.valid = false;
 }
 
-void RCInput::update(
-    const uint16_t *channels,
-    uint32_t nowMs)
-{
-    // --------------------------------------------------------
-    // Validate input
-    // --------------------------------------------------------
+// ============================================================================
+// Public API
+// ============================================================================
 
+void RCInput::update(
+    const std::uint16_t *channels,
+    std::uint64_t nowUs)
+{
     if (channels == nullptr)
     {
         setFailsafe();
         return;
     }
-
-    // --------------------------------------------------------
-    // Validate configuration
-    // --------------------------------------------------------
 
     if (!isValidConfiguration())
     {
@@ -34,9 +31,9 @@ void RCInput::update(
         return;
     }
 
-    // --------------------------------------------------------
-    // Clear function state
-    // --------------------------------------------------------
+    // ------------------------------------------------------------
+    // Reset function-level state before processing this frame.
+    // ------------------------------------------------------------
 
     _state.roll = 0.0f;
     _state.pitch = 0.0f;
@@ -47,26 +44,24 @@ void RCInput::update(
     _state.beeper = false;
     _state.calibration = false;
 
-    _state.flightMode = 0;
+    _state.flightMode = RCFlightMode::Angle;
 
-    // --------------------------------------------------------
-    // Process all channels
-    // --------------------------------------------------------
+    // ------------------------------------------------------------
+    // Process every RC channel.
+    // ------------------------------------------------------------
 
-    for (uint8_t i = 0;
+    for (std::uint8_t i = 0;
          i < RC_CHANNEL_COUNT;
          ++i)
     {
-        const RCChannelConfig &config =
-            _config.channels[i];
+        const std::uint16_t rawValue = channels[i];
 
-        const uint16_t rawValue =
-            channels[i];
+        _state.rawChannels[i] = rawValue;
 
         const float processedValue =
             processChannel(
                 rawValue,
-                config);
+                _config.channels[i]);
 
         _state.channels[i] =
             processedValue;
@@ -77,16 +72,60 @@ void RCInput::update(
             rawValue);
     }
 
-    // --------------------------------------------------------
-    // Update link state
-    // --------------------------------------------------------
+    // ------------------------------------------------------------
+    // Frame accepted.
+    // ------------------------------------------------------------
 
-    _state.lastUpdateMs = nowMs;
+    _state.valid = true;
     _state.failsafe = false;
+
+    _state.lastUpdateUs = nowUs;
+
+    ++_state.frameCounter;
 }
 
+// ============================================================================
+
+void RCInput::updateFailsafe(
+    std::uint64_t nowUs)
+{
+    if (!_state.valid)
+    {
+        setFailsafe();
+        return;
+    }
+
+    const std::uint64_t timeoutUs =
+        static_cast<std::uint64_t>(
+            _config.failsafeTimeoutMs) *
+        1000ULL;
+
+    if ((nowUs - _state.lastUpdateUs) >= timeoutUs)
+    {
+        setFailsafe();
+    }
+}
+
+// ============================================================================
+
+const RCState &RCInput::getState() const
+{
+    return _state;
+}
+
+// ============================================================================
+
+bool RCInput::isFailsafe() const
+{
+    return _state.failsafe;
+}
+
+// ============================================================================
+// Channel processing
+// ============================================================================
+
 float RCInput::processChannel(
-    uint16_t value,
+    std::uint16_t value,
     const RCChannelConfig &config) const
 {
     switch (config.function)
@@ -110,45 +149,56 @@ float RCInput::processChannel(
     }
 }
 
+// ============================================================================
+
 float RCInput::normalizeAxis(
-    uint16_t value,
+    std::uint16_t value,
     const RCChannelConfig &config) const
 {
-    if (value <= config.minimum)
-    {
-        return config.inverted
-                   ? 1.0f
-                   : -1.0f;
-    }
+    const float minimum =
+        static_cast<float>(config.minimum);
 
-    if (value >= config.maximum)
-    {
-        return config.inverted
-                   ? -1.0f
-                   : 1.0f;
-    }
+    const float center =
+        static_cast<float>(config.center);
+
+    const float maximum =
+        static_cast<float>(config.maximum);
+
+    const float input =
+        static_cast<float>(value);
 
     float normalized = 0.0f;
 
-    if (value < config.center)
+    // ------------------------------------------------------------
+    // Below center
+    // ------------------------------------------------------------
+
+    if (input < center)
     {
-        normalized =
-            static_cast<float>(
-                static_cast<int32_t>(value) -
-                static_cast<int32_t>(config.center)) /
-            static_cast<float>(
-                static_cast<int32_t>(config.center) -
-                static_cast<int32_t>(config.minimum));
+        const float range =
+            center - minimum;
+
+        if (range > 0.0f)
+        {
+            normalized =
+                (input - center) / range;
+        }
     }
+
+    // ------------------------------------------------------------
+    // Above center
+    // ------------------------------------------------------------
+
     else
     {
-        normalized =
-            static_cast<float>(
-                static_cast<int32_t>(value) -
-                static_cast<int32_t>(config.center)) /
-            static_cast<float>(
-                static_cast<int32_t>(config.maximum) -
-                static_cast<int32_t>(config.center));
+        const float range =
+            maximum - center;
+
+        if (range > 0.0f)
+        {
+            normalized =
+                (input - center) / range;
+        }
     }
 
     normalized =
@@ -170,31 +220,31 @@ float RCInput::normalizeAxis(
     return normalized;
 }
 
+// ============================================================================
+
 float RCInput::normalizeThrottle(
-    uint16_t value,
+    std::uint16_t value,
     const RCChannelConfig &config) const
 {
-    if (value <= config.minimum)
-    {
-        return config.inverted
-                   ? 1.0f
-                   : 0.0f;
-    }
+    const float minimum =
+        static_cast<float>(config.minimum);
 
-    if (value >= config.maximum)
+    const float maximum =
+        static_cast<float>(config.maximum);
+
+    const float input =
+        static_cast<float>(value);
+
+    const float range =
+        maximum - minimum;
+
+    if (range <= 0.0f)
     {
-        return config.inverted
-                   ? 0.0f
-                   : 1.0f;
+        return 0.0f;
     }
 
     float normalized =
-        static_cast<float>(
-            static_cast<int32_t>(value) -
-            static_cast<int32_t>(config.minimum)) /
-        static_cast<float>(
-            static_cast<int32_t>(config.maximum) -
-            static_cast<int32_t>(config.minimum));
+        (input - minimum) / range;
 
     normalized =
         std::clamp(
@@ -211,8 +261,10 @@ float RCInput::normalizeThrottle(
     return normalized;
 }
 
+// ============================================================================
+
 float RCInput::normalizeSwitch(
-    uint16_t value,
+    std::uint16_t value,
     const RCChannelConfig &config) const
 {
     bool active =
@@ -223,10 +275,10 @@ float RCInput::normalizeSwitch(
         active = !active;
     }
 
-    return active
-               ? 1.0f
-               : 0.0f;
+    return active ? 1.0f : 0.0f;
 }
+
+// ============================================================================
 
 float RCInput::applyDeadband(
     float value,
@@ -237,31 +289,50 @@ float RCInput::applyDeadband(
         return value;
     }
 
-    if (deadband >= 1.0f)
+    if (std::fabs(value) <= deadband)
     {
         return 0.0f;
     }
 
-    if (value >= -deadband &&
-        value <= deadband)
+    // Rescale remaining range so that:
+    //
+    // deadband -> 0
+    // +/-1     -> +/-1
+    //
+
+    const float sign =
+        value >= 0.0f ? 1.0f : -1.0f;
+
+    const float magnitude =
+        std::fabs(value);
+
+    const float remaining =
+        1.0f - deadband;
+
+    if (remaining <= 0.0f)
     {
         return 0.0f;
     }
 
-    if (value > 0.0f)
-    {
-        return (value - deadband) /
-               (1.0f - deadband);
-    }
+    const float scaled =
+        (magnitude - deadband) /
+        remaining;
 
-    return (value + deadband) /
-           (1.0f - deadband);
+    return sign *
+           std::clamp(
+               scaled,
+               0.0f,
+               1.0f);
 }
 
+// ============================================================================
+// Function mapping
+// ============================================================================
+
 void RCInput::assignFunction(
-    uint8_t channel,
+    std::uint8_t channel,
     float value,
-    uint16_t rawValue)
+    std::uint16_t rawValue)
 {
     if (!isValidChannelIndex(channel))
     {
@@ -273,6 +344,10 @@ void RCInput::assignFunction(
 
     switch (function)
     {
+        // --------------------------------------------------------
+        // Primary flight controls
+        // --------------------------------------------------------
+
     case RCFunction::Roll:
         _state.roll = value;
         break;
@@ -281,73 +356,75 @@ void RCInput::assignFunction(
         _state.pitch = value;
         break;
 
-    case RCFunction::Throttle:
-        _state.throttle = value;
-        break;
-
     case RCFunction::Yaw:
         _state.yaw = value;
         break;
 
+    case RCFunction::Throttle:
+        _state.throttle = value;
+        break;
+
+        // --------------------------------------------------------
+        // Arm
+        // --------------------------------------------------------
+
     case RCFunction::Arm:
         _state.arm =
-            rawValue >=
-            _config.channels[channel]
-                .switchThreshold;
-
-        if (_config.channels[channel].inverted)
-        {
-            _state.arm = !_state.arm;
-        }
-
+            value >= 0.5f;
         break;
+
+        // --------------------------------------------------------
+        // Beeper
+        // --------------------------------------------------------
 
     case RCFunction::Beeper:
         _state.beeper =
-            rawValue >=
-            _config.channels[channel]
-                .switchThreshold;
-
-        if (_config.channels[channel].inverted)
-        {
-            _state.beeper = !_state.beeper;
-        }
-
+            value >= 0.5f;
         break;
+
+        // --------------------------------------------------------
+        // Calibration
+        // --------------------------------------------------------
 
     case RCFunction::Calibration:
         _state.calibration =
-            rawValue >=
-            _config.channels[channel]
-                .switchThreshold;
-
-        if (_config.channels[channel].inverted)
-        {
-            _state.calibration =
-                !_state.calibration;
-        }
-
+            value >= 0.5f;
         break;
+
+        // --------------------------------------------------------
+        // Flight mode
+        //
+        // Use the raw CRSF value here because flight mode is a
+        // three-position switch rather than a binary switch.
+        // --------------------------------------------------------
 
     case RCFunction::FlightMode:
-        _state.flightMode =
-            rawValue >=
-                    _config.channels[channel]
-                        .switchThreshold
-                ? 1
-                : 0;
 
-        if (_config.channels[channel].inverted)
+        if (rawValue < 1200)
         {
             _state.flightMode =
-                _state.flightMode == 0
-                    ? 1
-                    : 0;
+                RCFlightMode::Angle;
+        }
+        else if (rawValue < 1700)
+        {
+            _state.flightMode =
+                RCFlightMode::Horizon;
+        }
+        else
+        {
+            _state.flightMode =
+                RCFlightMode::Acro;
         }
 
         break;
 
-    case RCFunction::None:
+        // --------------------------------------------------------
+        // AUX channels
+        //
+        // Currently stored in channels[].
+        // Dedicated fields can be added later if needed.
+        // --------------------------------------------------------
+
     case RCFunction::Aux1:
     case RCFunction::Aux2:
     case RCFunction::Aux3:
@@ -356,38 +433,15 @@ void RCInput::assignFunction(
     case RCFunction::Aux6:
     case RCFunction::Aux7:
     case RCFunction::Aux8:
+    case RCFunction::None:
+    default:
         break;
     }
 }
 
-void RCInput::updateFailsafe(
-    uint32_t nowMs)
-{
-    if (_state.failsafe)
-    {
-        return;
-    }
-
-    const uint32_t elapsed =
-        nowMs - _state.lastUpdateMs;
-
-    if (elapsed >=
-        _config.failsafeTimeoutMs)
-    {
-        setFailsafe();
-    }
-}
-
-const RCState &
-RCInput::getState() const
-{
-    return _state;
-}
-
-bool RCInput::isFailsafe() const
-{
-    return _state.failsafe;
-}
+// ============================================================================
+// Configuration validation
+// ============================================================================
 
 bool RCInput::isValidConfiguration() const
 {
@@ -396,77 +450,39 @@ bool RCInput::isValidConfiguration() const
         return false;
     }
 
-    for (uint8_t i = 0;
-         i < RC_CHANNEL_COUNT;
-         ++i)
+    for (const auto &channel : _config.channels)
     {
-        const RCChannelConfig &config =
-            _config.channels[i];
+        // --------------------------------------------------------
+        // Basic range validation
+        // --------------------------------------------------------
 
-        // ----------------------------------------------------
-        // Range validation
-        // ----------------------------------------------------
-
-        if (config.minimum >=
-            config.center)
+        if (!(channel.minimum <
+                  channel.center &&
+              channel.center <
+                  channel.maximum))
         {
             return false;
         }
 
-        if (config.center >=
-            config.maximum)
-        {
-            return false;
-        }
-
-        // ----------------------------------------------------
+        // --------------------------------------------------------
         // Deadband validation
-        // ----------------------------------------------------
+        // --------------------------------------------------------
 
-        if (config.deadband < 0.0f ||
-            config.deadband >= 1.0f)
+        if (channel.deadband < 0.0f ||
+            channel.deadband >= 1.0f)
         {
             return false;
         }
 
-        // ----------------------------------------------------
-        // Switch validation
-        // ----------------------------------------------------
+        // --------------------------------------------------------
+        // Switch threshold
+        // --------------------------------------------------------
 
-        if (config.switchThreshold <
-                config.minimum ||
-            config.switchThreshold >
-                config.maximum)
+        if (channel.switchThreshold <
+                channel.minimum ||
+            channel.switchThreshold >
+                channel.maximum)
         {
-            return false;
-        }
-
-        // ----------------------------------------------------
-        // Function-specific validation
-        // ----------------------------------------------------
-
-        switch (config.function)
-        {
-        case RCFunction::Roll:
-        case RCFunction::Pitch:
-        case RCFunction::Yaw:
-        case RCFunction::Throttle:
-        case RCFunction::Arm:
-        case RCFunction::Beeper:
-        case RCFunction::Calibration:
-        case RCFunction::FlightMode:
-        case RCFunction::None:
-        case RCFunction::Aux1:
-        case RCFunction::Aux2:
-        case RCFunction::Aux3:
-        case RCFunction::Aux4:
-        case RCFunction::Aux5:
-        case RCFunction::Aux6:
-        case RCFunction::Aux7:
-        case RCFunction::Aux8:
-            break;
-
-        default:
             return false;
         }
     }
@@ -474,30 +490,44 @@ bool RCInput::isValidConfiguration() const
     return true;
 }
 
+// ============================================================================
+
 bool RCInput::isValidChannelIndex(
-    uint8_t index) const
+    std::uint8_t index) const
 {
     return index < RC_CHANNEL_COUNT;
 }
 
+// ============================================================================
+// Failsafe
+// ============================================================================
+
 void RCInput::setFailsafe()
 {
+    _state.valid = false;
     _state.failsafe = true;
 
-    _state.arm = false;
-    _state.beeper = false;
-    _state.calibration = false;
+    // ------------------------------------------------------------
+    // Critical safety outputs.
+    // ------------------------------------------------------------
 
-    _state.flightMode = 0;
+    _state.arm = false;
+
+    _state.throttle = 0.0f;
 
     _state.roll = 0.0f;
     _state.pitch = 0.0f;
     _state.yaw = 0.0f;
-    _state.throttle = 0.0f;
 
-    for (float &channel :
-         _state.channels)
-    {
-        channel = 0.0f;
-    }
+    _state.beeper = false;
+    _state.calibration = false;
+
+    _state.flightMode =
+        RCFlightMode::Angle;
+
+    // ------------------------------------------------------------
+    // Processed channels become safe.
+    // ------------------------------------------------------------
+
+    _state.channels.fill(0.0f);
 }

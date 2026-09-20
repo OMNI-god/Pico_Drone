@@ -2,22 +2,16 @@
 
 #include <cstdint>
 
-#include "ICM20948.h"
 #include "SensorState.h"
+#include "ICM20948.h"
 
 class IMUAdapter
 {
 public:
-    IMUAdapter();
+    explicit IMUAdapter(ICM20948 &imu);
 
-    bool update(
-        const ICM20948::SensorData &data,
-        uint32_t timestampUs);
-
-    const IMUState &getState() const;
-
-    void invalidate();
+    bool read(IMUState &state);
 
 private:
-    IMUState _state;
+    ICM20948 &imu_;
 };

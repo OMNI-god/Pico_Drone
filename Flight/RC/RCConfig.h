@@ -3,31 +3,20 @@
 #include <array>
 #include <cstdint>
 
-// ------------------------------------------------------------
-// RC system constants
-// ------------------------------------------------------------
+constexpr std::uint8_t RC_CHANNEL_COUNT = 16;
 
-constexpr uint8_t RC_CHANNEL_COUNT = 16;
+// CRSF / ELRS typical calibrated range.
+constexpr std::uint16_t RC_DEFAULT_MINIMUM = 172;
+constexpr std::uint16_t RC_DEFAULT_CENTER = 992;
+constexpr std::uint16_t RC_DEFAULT_MAXIMUM = 1811;
 
-// Standard CRSF channel range
-constexpr uint16_t RC_DEFAULT_MINIMUM = 172;
-constexpr uint16_t RC_DEFAULT_CENTER = 992;
-constexpr uint16_t RC_DEFAULT_MAXIMUM = 1811;
+constexpr std::uint16_t RC_DEFAULT_SWITCH_THRESHOLD = 1500;
 
-// Default switch threshold
-constexpr uint16_t RC_DEFAULT_SWITCH_THRESHOLD = 1500;
-
-// Default deadband
 constexpr float RC_DEFAULT_DEADBAND = 0.02f;
 
-// Default failsafe timeout
-constexpr uint32_t RC_DEFAULT_FAILSAFE_TIMEOUT_MS = 100;
+constexpr std::uint32_t RC_DEFAULT_FAILSAFE_TIMEOUT_MS = 100;
 
-// ------------------------------------------------------------
-// RC channel functions
-// ------------------------------------------------------------
-
-enum class RCFunction : uint8_t
+enum class RCFunction : std::uint8_t
 {
     None = 0,
 
@@ -39,6 +28,7 @@ enum class RCFunction : uint8_t
     Arm,
     Beeper,
     Calibration,
+
     FlightMode,
 
     Aux1,
@@ -51,45 +41,34 @@ enum class RCFunction : uint8_t
     Aux8
 };
 
-// ------------------------------------------------------------
-// Individual channel configuration
-// ------------------------------------------------------------
+enum class RCFlightMode : std::uint8_t
+{
+    Angle = 0,
+    Horizon = 1,
+    Acro = 2
+};
 
 struct RCChannelConfig
 {
-    uint16_t minimum =
-        RC_DEFAULT_MINIMUM;
+    std::uint16_t minimum = RC_DEFAULT_MINIMUM;
+    std::uint16_t center = RC_DEFAULT_CENTER;
+    std::uint16_t maximum = RC_DEFAULT_MAXIMUM;
 
-    uint16_t center =
-        RC_DEFAULT_CENTER;
-
-    uint16_t maximum =
-        RC_DEFAULT_MAXIMUM;
-
-    uint16_t switchThreshold =
+    std::uint16_t switchThreshold =
         RC_DEFAULT_SWITCH_THRESHOLD;
 
-    float deadband =
-        RC_DEFAULT_DEADBAND;
+    float deadband = RC_DEFAULT_DEADBAND;
 
     bool inverted = false;
 
-    RCFunction function =
-        RCFunction::None;
+    RCFunction function = RCFunction::None;
 };
-
-// ------------------------------------------------------------
-// Complete RC configuration
-// ------------------------------------------------------------
 
 struct RCConfig
 {
-    std::array<
-        RCChannelConfig,
-        RC_CHANNEL_COUNT>
-        channels{};
+    std::array<RCChannelConfig, RC_CHANNEL_COUNT> channels{};
 
-    uint32_t failsafeTimeoutMs =
+    std::uint32_t failsafeTimeoutMs =
         RC_DEFAULT_FAILSAFE_TIMEOUT_MS;
 
     RCConfig();

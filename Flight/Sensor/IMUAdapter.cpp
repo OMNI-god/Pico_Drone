@@ -1,36 +1,34 @@
 #include "IMUAdapter.h"
 
-IMUAdapter::IMUAdapter()
-    : _state{}
+#include "pico/stdlib.h"
+
+IMUAdapter::IMUAdapter(ICM20948 &imu)
+    : imu_(imu)
 {
 }
 
-bool IMUAdapter::update(
-    const ICM20948::SensorData &data,
-    uint32_t timestampUs)
+bool IMUAdapter::read(IMUState &state)
 {
-    _state.accelX = data.acceleration.x;
-    _state.accelY = data.acceleration.y;
-    _state.accelZ = data.acceleration.z;
+    ICM20948::SensorData sensorData{};
 
-    _state.gyroX = data.gyroscope.x;
-    _state.gyroY = data.gyroscope.y;
-    _state.gyroZ = data.gyroscope.z;
+    if (!imu_.read(sensorData))
+    {
+        state.valid = false;
+        return false;
+    }
 
-    _state.timestampUs = timestampUs;
+    state.accelX = sensorData.acceleration.x;
+    state.accelY = sensorData.acceleration.y;
+    state.accelZ = sensorData.acceleration.z;
 
-    _state.valid = true;
+    state.gyroX = sensorData.gyroscope.x;
+    state.gyroY = sensorData.gyroscope.y;
+    state.gyroZ = sensorData.gyroscope.z;
+
+    // Pico SDK absolute time in microseconds.
+    state.timestampUs = time_us_64();
+
+    state.valid = true;
 
     return true;
-}
-
-const IMUState &
-IMUAdapter::getState() const
-{
-    return _state;
-}
-
-void IMUAdapter::invalidate()
-{
-    _state.valid = false;
 }

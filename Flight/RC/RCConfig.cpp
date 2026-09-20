@@ -2,64 +2,53 @@
 
 RCConfig::RCConfig()
 {
-    // --------------------------------------------------------
-    // Default channel mapping
-    //
-    // CH1 = Roll
-    // CH2 = Pitch
-    // CH3 = Throttle
-    // CH4 = Yaw
-    // CH5 = Arm
-    // CH6 = Flight Mode
-    //
-    // CH7-CH16 = AUX
-    // --------------------------------------------------------
+    for (auto &channel : channels)
+    {
+        channel = RCChannelConfig{};
+    }
 
-    channels[0].function =
-        RCFunction::Roll;
+    // ------------------------------------------------------------
+    // Primary flight controls
+    // ------------------------------------------------------------
 
-    channels[1].function =
-        RCFunction::Pitch;
+    // CH1 -> Roll
+    channels[0].function = RCFunction::Roll;
 
-    channels[2].function =
-        RCFunction::Throttle;
+    // CH2 -> Pitch
+    channels[1].function = RCFunction::Pitch;
 
-    channels[3].function =
-        RCFunction::Yaw;
+    // CH3 -> Throttle
+    channels[2].function = RCFunction::Throttle;
 
-    channels[4].function =
-        RCFunction::Arm;
+    // CH4 -> Yaw
+    channels[3].function = RCFunction::Yaw;
 
-    channels[5].function =
-        RCFunction::FlightMode;
+    // ------------------------------------------------------------
+    // Switches
+    // ------------------------------------------------------------
 
-    channels[6].function =
-        RCFunction::Aux1;
+    // CH5 -> Arm
+    channels[4].function = RCFunction::Arm;
 
-    channels[7].function =
-        RCFunction::Aux2;
+    // CH6 -> Flight mode
+    channels[5].function = RCFunction::FlightMode;
 
-    channels[8].function =
-        RCFunction::Aux3;
+    // CH7 -> Beeper
+    channels[6].function = RCFunction::Beeper;
 
-    channels[9].function =
-        RCFunction::Aux4;
+    // CH8 -> Calibration
+    channels[7].function = RCFunction::Calibration;
 
-    channels[10].function =
-        RCFunction::Aux5;
+    // ------------------------------------------------------------
+    // AUX channels
+    // ------------------------------------------------------------
 
-    channels[11].function =
-        RCFunction::Aux6;
-
-    channels[12].function =
-        RCFunction::Aux7;
-
-    channels[13].function =
-        RCFunction::Aux8;
-
-    channels[14].function =
-        RCFunction::None;
-
-    channels[15].function =
-        RCFunction::None;
+    channels[8].function = RCFunction::Aux1;
+    channels[9].function = RCFunction::Aux2;
+    channels[10].function = RCFunction::Aux3;
+    channels[11].function = RCFunction::Aux4;
+    channels[12].function = RCFunction::Aux5;
+    channels[13].function = RCFunction::Aux6;
+    channels[14].function = RCFunction::Aux7;
+    channels[15].function = RCFunction::Aux8;
 }

@@ -11,12 +11,14 @@ public:
     explicit RCInput(
         const RCConfig &config = RCConfig{});
 
+    // Process one complete CRSF channel frame.
     void update(
-        const uint16_t *channels,
-        uint32_t nowMs);
+        const std::uint16_t *channels,
+        std::uint64_t nowUs);
 
+    // Check receiver timeout.
     void updateFailsafe(
-        uint32_t nowMs);
+        std::uint64_t nowUs);
 
     const RCState &getState() const;
 
@@ -24,15 +26,15 @@ public:
 
 private:
     float normalizeAxis(
-        uint16_t value,
+        std::uint16_t value,
         const RCChannelConfig &config) const;
 
     float normalizeThrottle(
-        uint16_t value,
+        std::uint16_t value,
         const RCChannelConfig &config) const;
 
     float normalizeSwitch(
-        uint16_t value,
+        std::uint16_t value,
         const RCChannelConfig &config) const;
 
     float applyDeadband(
@@ -40,18 +42,18 @@ private:
         float deadband) const;
 
     float processChannel(
-        uint16_t value,
+        std::uint16_t value,
         const RCChannelConfig &config) const;
 
     void assignFunction(
-        uint8_t channel,
+        std::uint8_t channel,
         float value,
-        uint16_t rawValue);
+        std::uint16_t rawValue);
 
     bool isValidConfiguration() const;
 
     bool isValidChannelIndex(
-        uint8_t index) const;
+        std::uint8_t index) const;
 
     void setFailsafe();
 

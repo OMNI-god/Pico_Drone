@@ -3,18 +3,41 @@
 #include <cstdint>
 
 #include "RCState.h"
+#include "SensorState.h"
+#include "IMUSnapshot.h"
 
-struct FlightControlState
+struct FlightControllerState
 {
-    bool armed;
-    bool failsafe;
+    // ------------------------------------------------------------
+    // RC commands
+    // ------------------------------------------------------------
 
-    float roll;
-    float pitch;
-    float yaw;
-    float throttle;
+    float roll = 0.0f;
+    float pitch = 0.0f;
+    float yaw = 0.0f;
+    float throttle = 0.0f;
 
-    uint8_t flightMode;
+    // ------------------------------------------------------------
+    // Flight state
+    // ------------------------------------------------------------
+
+    bool armed = false;
+    bool failsafe = true;
+
+    RCFlightMode flightMode =
+        RCFlightMode::Angle;
+
+    // ------------------------------------------------------------
+    // Sensor state
+    // ------------------------------------------------------------
+
+    bool imuHealthy = false;
+
+    // ------------------------------------------------------------
+    // Timing
+    // ------------------------------------------------------------
+
+    std::uint64_t lastUpdateUs = 0;
 };
 
 class FlightController
@@ -24,13 +47,18 @@ public:
 
     void update(
         const RCState &rc,
-        uint32_t nowUs);
+        std::uint64_t nowUs);
 
-    const FlightControlState &getState() const;
+    void update(
+        const RCState &rc,
+        const IMUSnapshot &imu,
+        std::uint64_t nowUs);
+
+    const FlightControllerState &getState() const;
 
 private:
-    FlightControlState _state;
+    void applyFailsafe();
 
-    uint32_t _lastUpdateUs;
-    float _dt;
+private:
+    FlightControllerState _state;
 };

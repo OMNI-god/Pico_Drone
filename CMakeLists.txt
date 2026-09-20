@@ -14,7 +14,7 @@ set(picotoolVersion 2.3.0)
 
 set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
 
-if (EXISTS ${picoVscode})
+if(EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 
@@ -51,6 +51,24 @@ pico_sdk_init()
 # ====================================================================================
 
 include(FreeRTOS_Kernel_import.cmake)
+
+
+# ====================================================================================
+# FreeRTOS Configuration
+# ====================================================================================
+#
+# FreeRTOSConfig.h is located in the project root.
+#
+# This interface target allows every FreeRTOS-dependent component
+# to find the configuration without duplicating include paths.
+#
+# ====================================================================================
+
+add_library(freertos_config INTERFACE)
+
+target_include_directories(freertos_config SYSTEM INTERFACE
+    ${CMAKE_CURRENT_LIST_DIR}
+)
 
 
 # ====================================================================================
@@ -336,48 +354,78 @@ target_link_libraries(SensorManager PUBLIC
 # ====================================================================================
 # Flight / RC
 # ====================================================================================
-
-
-# ------------------------------------------------------------------------------------
-# CRSF + RC Input + CRSF Telemetry
-# ------------------------------------------------------------------------------------
 #
-# RC subsystem:
+# RC architecture:
 #
-#   CrsfCrc
-#       |
-#       +--> CrsfParser
-#       |
-#       +--> CrsfTelemetry
-#       |
-#       +--> RCInput
+#     ELRS Receiver
+#          |
+#          v
+#       UART / Elrs
+#          |
+#          v
+#      CrsfParser
+#          |
+#          | raw uint16_t[16]
+#          v
+#       RCInput
+#          |
+#          | RCState
+#          v
+#      RCPublisher
+#          |
+#          +-------------------+
+#          |                   |
+#          v                   v
+#    Flight Controller     Diagnostics
 #
-# RCInput does NOT depend directly on Elrs.
+# Responsibilities:
 #
-# Elrs is responsible for UART transport.
-# CrsfParser is responsible for CRSF protocol parsing.
-# RCInput is responsible for channel processing.
-# CrsfTelemetry is responsible for telemetry frame generation.
+#     Elrs
+#       -> UART transport
 #
-# ------------------------------------------------------------------------------------
+#     CrsfCrc
+#       -> CRSF CRC validation
+#
+#     CrsfParser
+#       -> CRSF frame parsing
+#
+#     RCInput
+#       -> validation
+#       -> normalization
+#       -> deadband
+#       -> inversion
+#       -> channel mapping
+#       -> failsafe
+#
+#     RCPublisher
+#       -> FreeRTOS-safe RC state publication
+#
+#     CrsfTelemetry
+#       -> outgoing telemetry frames
+#
+# ====================================================================================
 
 add_library(RCInput
-
+    Flight/RC/RCConfig.cpp
+    Flight/RC/RCInput.cpp
+    Flight/RC/RCPublisher.cpp
+    Flight/RC/RCTask.cpp
     Flight/RC/CrsfCrc.cpp
     Flight/RC/CrsfParser.cpp
     Flight/RC/CrsfTelemetry.cpp
-    Flight/RC/RCConfig.cpp
-    Flight/RC/RCInput.cpp
 )
 
 target_include_directories(RCInput PUBLIC
-
     ${FLIGHT_DIR}/RC
+    ${DRIVERS_DIR}/UART
 )
 
-target_link_libraries(RCInput PUBLIC
 
+target_link_libraries(RCInput PUBLIC
     pico_stdlib
+    freertos_config
+    FreeRTOS-Kernel
+    Elrs
 )
 
 
@@ -385,22 +433,44 @@ target_link_libraries(RCInput PUBLIC
 # Flight / Sensor Processing
 # ====================================================================================
 #
-# Hardware-independent sensor processing.
+# Hardware-independent IMU processing.
 #
-# ICM20948
-#     |
-#     +--> IMU Adapter
-#     |
-#     +--> IMU Calibration
-#     |
-#     +--> IMUState
+#     ICM20948
+#          |
+#          v
+#     IMUAdapter
+#          |
+#          v
+#    IMUCalibration
+#          |
+#          v
+#       IMUTask
+#          |
+#          v
+#    IMUPublisher
+#          |
+#          v
+#     IMUSnapshot
 #
-# ------------------------------------------------------------------------------------
+# FreeRTOS:
+#
+#     IMUTask
+#        |
+#        +--> periodic acquisition
+#        +--> calibration
+#        +--> timestamping
+#        +--> snapshot publication
+#
+# ====================================================================================
 
 add_library(FlightSensor
 
+    Flight/Sensor/IMUAdapter.cpp
     Flight/Sensor/IMUCalibration.cpp
+    Flight/Sensor/IMUPublisher.cpp
+    Flight/Sensor/IMUTask.cpp
 )
+
 
 target_include_directories(FlightSensor PUBLIC
 
@@ -411,11 +481,16 @@ target_include_directories(FlightSensor PUBLIC
     ${INTERFACES_DIR}
 )
 
+
 target_link_libraries(FlightSensor PUBLIC
 
     pico_stdlib
 
     ICM20948
+
+    freertos_config
+    FreeRTOS-Kernel
+    FreeRTOS-Kernel-Heap4
 )
 
 
@@ -423,30 +498,36 @@ target_link_libraries(FlightSensor PUBLIC
 # Flight / Flight Control
 # ====================================================================================
 #
-# Flight control layer.
+# Current architecture:
 #
-# RC Input
-#     |
-#     +--------------------+
-#                          |
-#                          v
-#                    FlightController
-#                          |
-#                          v
-#                       PID
-#                          |
-#                          v
-#                        Mixer
-#                          |
-#                          v
-#                         ESC
+#     RCInput
+#        |
+#        v
+#   FlightController
+#        |
+#        +----> IMU / Sensor State
+#        |
+#        v
+#      PID
+#        |
+#        v
+#      Mixer
+#        |
+#        v
+#       ESC
 #
-# ------------------------------------------------------------------------------------
+# NOTE:
+#
+# PID and mixer are intentionally not implemented yet.
+# This target currently provides the flight-controller foundation.
+#
+# ====================================================================================
 
 add_library(FlightControl
 
     Flight/FlightControl/FlightController.cpp
 )
+
 
 target_include_directories(FlightControl PUBLIC
 
@@ -460,6 +541,7 @@ target_include_directories(FlightControl PUBLIC
 
     ${INTERFACES_DIR}
 )
+
 
 target_link_libraries(FlightControl PUBLIC
 
@@ -542,14 +624,7 @@ target_link_libraries(drone PRIVATE
 
 
     # ----------------------------------------------------------------------------
-    # Flight / RC
-    # ----------------------------------------------------------------------------
-
-    RCInput
-
-
-    # ----------------------------------------------------------------------------
-    # Sensors
+    # Sensor Drivers
     # ----------------------------------------------------------------------------
 
     ADXL345
@@ -563,6 +638,13 @@ target_link_libraries(drone PRIVATE
     # ----------------------------------------------------------------------------
 
     SensorManager
+
+
+    # ----------------------------------------------------------------------------
+    # Flight / RC
+    # ----------------------------------------------------------------------------
+
+    RCInput
 
 
     # ----------------------------------------------------------------------------
@@ -583,6 +665,7 @@ target_link_libraries(drone PRIVATE
     # FreeRTOS
     # ----------------------------------------------------------------------------
 
+    freertos_config
     FreeRTOS-Kernel
     FreeRTOS-Kernel-Heap4
 )
@@ -592,10 +675,10 @@ target_link_libraries(drone PRIVATE
 # USB / UART
 # ====================================================================================
 
-# USB serial enabled for debugging
+# USB serial enabled for debugging.
 pico_enable_stdio_usb(drone 1)
 
-# Hardware UART stdio disabled
+# Hardware UART stdio disabled because UART1 is used for ELRS/CRSF.
 pico_enable_stdio_uart(drone 0)
 
 
@@ -609,6 +692,7 @@ pico_set_program_name(
 
     "drone"
 )
+
 
 pico_set_program_version(
 
