@@ -4,6 +4,9 @@
 
 #include "hardware/i2c.h"
 
+#include "FreeRTOS.h"
+#include "semphr.h"
+
 #include "II2c.h"
 
 class I2c : public II2c
@@ -37,6 +40,20 @@ public:
         uint32_t rxLength) override;
 
 private:
+    /*
+     * Take the bus mutex.
+     *
+     * The I2C bus is shared by several FreeRTOS tasks
+     * (IMU task, telemetry task, diagnostics task).
+     * A blocking transaction must not be interrupted
+     * by another task, otherwise the transfer is
+     * corrupted.
+     */
+    void acquireBus();
+
+    void releaseBus();
+
+private:
     i2c_inst_t *i2cInstance;
 
     uint32_t baudrate;
@@ -44,4 +61,6 @@ private:
     uint32_t sclPin;
 
     bool initialized = false;
+
+    SemaphoreHandle_t busMutex = nullptr;
 };

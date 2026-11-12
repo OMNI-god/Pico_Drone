@@ -377,21 +377,22 @@ bool ADXL345::readRegisters(
     }
 
     // --------------------------------------------------------
-    // ADXL345 multi-byte read requires bit 6 of the register
-    // address to be set.
+    // ADXL345 register addressing in I2C mode:
     //
-    // 0x32 -> 0xF2
+    // The register address is sent as-is. The device
+    // automatically increments the internal register
+    // pointer for every additional byte clocked, so a
+    // burst read starting at DATAX0 (0x32) returns
+    // DATAX0..DATAZ1.
     //
-    // This enables multi-byte access.
+    // The multi-byte (MB) bit only applies to SPI, where
+    // it shares the address byte with the R/W bit.
     // --------------------------------------------------------
-
-    uint8_t multiByteReg =
-        reg | 0x40;
 
     const int result =
         bus.writeRead(
             address,
-            &multiByteReg,
+            &reg,
             1,
             data,
             length);

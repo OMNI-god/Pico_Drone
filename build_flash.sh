@@ -5,6 +5,7 @@ set -e
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="$PROJECT_DIR/build"
 UF2_FILE="$BUILD_DIR/drone.uf2"
+FREERTOS_KERNEL_DIR="${FREERTOS_KERNEL_PATH:-$PROJECT_DIR/FreeRTOS-Kernel}"
 
 PICOTOOL="$HOME/.pico-sdk/picotool/2.3.0/picotool/picotool"
 
@@ -13,6 +14,33 @@ echo " Raspberry Pi Pico 2 Build & Flash"
 echo "========================================"
 
 cd "$PROJECT_DIR"
+
+if [[ "$FREERTOS_KERNEL_DIR" != /* ]]; then
+    FREERTOS_KERNEL_DIR="$PROJECT_DIR/$FREERTOS_KERNEL_DIR"
+fi
+
+# ==================================================
+# FreeRTOS dependency
+# ==================================================
+
+if [ -z "${FREERTOS_KERNEL_PATH:-}" ] &&
+   [ ! -f "$FREERTOS_KERNEL_DIR/portable/ThirdParty/GCC/RP2350_ARM_NTZ/CMakeLists.txt" ]; then
+    echo
+    echo "FreeRTOS Kernel is missing; initializing the pinned submodule..."
+    if ! git -C "$PROJECT_DIR" submodule update --init --recursive -- FreeRTOS-Kernel; then
+        echo
+        echo "ERROR: Could not initialize the FreeRTOS Kernel submodule." >&2
+        exit 1
+    fi
+fi
+
+if [ ! -f "$FREERTOS_KERNEL_DIR/portable/ThirdParty/GCC/RP2350_ARM_NTZ/CMakeLists.txt" ]; then
+    echo
+    echo "ERROR: FreeRTOS Kernel was not found at:"
+    echo "$FREERTOS_KERNEL_DIR"
+    echo "Set FREERTOS_KERNEL_PATH to a FreeRTOS-Kernel checkout."
+    exit 1
+fi
 
 # ==================================================
 # 1. Configure
@@ -24,7 +52,8 @@ echo "[1/4] Configuring CMake..."
 cmake \
     -S "$PROJECT_DIR" \
     -B "$BUILD_DIR" \
-    -DPICO_BOARD=pico2
+    -DPICO_BOARD=pico2 \
+    -DFREERTOS_KERNEL_PATH="$FREERTOS_KERNEL_DIR"
 
 # ==================================================
 # 2. Build

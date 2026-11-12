@@ -14,7 +14,8 @@ IMUTask::IMUTask(
       configuration_(configuration),
       taskHandle_(nullptr),
       sequence_(0),
-      running_(false)
+      running_(false),
+      calibrationResetRequested_(false)
 {
 }
 
@@ -47,6 +48,11 @@ bool IMUTask::isRunning() const
     return running_;
 }
 
+void IMUTask::requestCalibrationReset()
+{
+    calibrationResetRequested_ = true;
+}
+
 void IMUTask::taskEntry(void *parameter)
 {
     auto *task = static_cast<IMUTask *>(parameter);
@@ -70,6 +76,17 @@ void IMUTask::run()
 
     while (true)
     {
+        /*
+         * Calibration reset requested from another task.
+         */
+
+        if (calibrationResetRequested_)
+        {
+            calibration_.reset();
+
+            calibrationResetRequested_ = false;
+        }
+
         IMUState sample{};
 
         if (adapter_.read(sample))

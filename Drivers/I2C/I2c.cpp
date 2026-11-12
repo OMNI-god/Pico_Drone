@@ -52,6 +52,18 @@ bool I2c::initialize()
     gpio_pull_up(sdaPin);
     gpio_pull_up(sclPin);
 
+    /*
+     * Serialize access to the shared bus.
+     *
+     * Created before the scheduler starts, so the
+     * default dynamic allocation is used.
+     */
+
+    if (busMutex == nullptr)
+    {
+        busMutex = xSemaphoreCreateMutex();
+    }
+
     initialized = true;
 
     printf(
@@ -85,6 +97,8 @@ int I2c::write(
         return -1;
     }
 
+    acquireBus();
+
     int result =
         i2c_write_blocking(
             i2cInstance,
@@ -92,6 +106,8 @@ int I2c::write(
             data,
             length,
             nostop);
+
+    releaseBus();
 
     if (result < 0)
     {
@@ -126,6 +142,8 @@ int I2c::read(
         return -1;
     }
 
+    acquireBus();
+
     int result =
         i2c_read_blocking(
             i2cInstance,
@@ -133,6 +151,8 @@ int I2c::read(
             data,
             length,
             nostop);
+
+    releaseBus();
 
     if (result < 0)
     {
@@ -187,6 +207,8 @@ int I2c::writeRead(
         return -1;
     }
 
+    acquireBus();
+
     // -------------------------------------------------------------------------
     // Write register address.
     //
@@ -220,6 +242,8 @@ int I2c::writeRead(
             "      actual = %d\n",
             writeResult);
 
+        releaseBus();
+
         return -1;
     }
 
@@ -238,6 +262,8 @@ int I2c::writeRead(
             rxData,
             rxLength,
             false);
+
+    releaseBus();
 
     if (readResult != static_cast<int>(rxLength))
     {
@@ -260,4 +286,26 @@ int I2c::writeRead(
     }
 
     return readResult;
+}
+
+// =============================================================================
+// Bus ownership
+// =============================================================================
+
+void I2c::acquireBus()
+{
+    if (busMutex != nullptr)
+    {
+        xSemaphoreTake(
+            busMutex,
+            portMAX_DELAY);
+    }
+}
+
+void I2c::releaseBus()
+{
+    if (busMutex != nullptr)
+    {
+        xSemaphoreGive(busMutex);
+    }
 }

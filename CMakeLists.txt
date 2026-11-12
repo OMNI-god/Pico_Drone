@@ -1,3 +1,17 @@
+# == DO NOT EDIT THE FOLLOWING LINES for the Raspberry Pi Pico VS Code Extension to work ==
+if(WIN32)
+    set(USERHOME $ENV{USERPROFILE})
+else()
+    set(USERHOME $ENV{HOME})
+endif()
+set(sdkVersion 2.3.1)
+set(toolchainVersion 15_2_Rel1)
+set(picotoolVersion 2.3.1)
+set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
+if (EXISTS ${picoVscode})
+    include(${picoVscode})
+endif()
+# ====================================================================================
 # ====================================================================================
 # Raspberry Pi Pico VS Code Extension
 # ====================================================================================
@@ -152,6 +166,9 @@ target_link_libraries(I2c PUBLIC
     hardware_gpio
 
     II2c
+    freertos_config
+    FreeRTOS-Kernel
+    FreeRTOS-Kernel-Heap4
 )
 
 
@@ -321,6 +338,28 @@ target_link_libraries(ICM20948 PUBLIC
 )
 
 
+# ------------------------------------------------------------------------------------
+# GPS (GP1513 / MC-1513, MediaTek MT3339)
+# ------------------------------------------------------------------------------------
+
+add_library(Gps
+
+    Drivers/Sensors/GPS/Gps.cpp
+)
+
+target_include_directories(Gps PUBLIC
+
+    ${DRIVERS_DIR}/Sensors/GPS
+)
+
+target_link_libraries(Gps PUBLIC
+
+    pico_stdlib
+    hardware_uart
+    hardware_gpio
+)
+
+
 # ====================================================================================
 # Sensor Manager
 # ====================================================================================
@@ -338,6 +377,7 @@ target_include_directories(SensorManager PUBLIC
     ${DRIVERS_DIR}/Sensors/GY271
     ${DRIVERS_DIR}/Sensors/BMP280
     ${DRIVERS_DIR}/Sensors/ADXL345
+    ${DRIVERS_DIR}/Sensors/GPS
 
     ${INTERFACES_DIR}
 )
@@ -348,6 +388,7 @@ target_link_libraries(SensorManager PUBLIC
     GY271
     BMP280
     ADXL345
+    Gps
 )
 
 
@@ -465,6 +506,7 @@ target_link_libraries(RCInput PUBLIC
 
 add_library(FlightSensor
 
+    Flight/Sensor/AttitudeEstimator.cpp
     Flight/Sensor/IMUAdapter.cpp
     Flight/Sensor/IMUCalibration.cpp
     Flight/Sensor/IMUPublisher.cpp
@@ -518,14 +560,33 @@ target_link_libraries(FlightSensor PUBLIC
 #
 # NOTE:
 #
-# PID and mixer are intentionally not implemented yet.
-# This target currently provides the flight-controller foundation.
+# The flight controller owns the PID loops and the
+# motor mixer:
 #
+#     RCState ----------------+
+#                             |
+#     IMUSnapshot ------------+----> FlightController
+#                             |            |
+#     AttitudeState ---------+             |
+#                             |            v
+#     SafetySnapshot --------+          PID loops
+#                                          |
+#                                          v
+#                                      MotorMixer
+#                                          |
+#                                          v
+#                                        Esc
+#
+# FlightControlTask runs the loop and writes the
+# motor outputs.
 # ====================================================================================
 
 add_library(FlightControl
 
     Flight/FlightControl/FlightController.cpp
+    Flight/FlightControl/FlightControlTask.cpp
+    Flight/FlightControl/PID.cpp
+    Flight/FlightControl/MotorMixer.cpp
 )
 
 
@@ -537,6 +598,8 @@ target_include_directories(FlightControl PUBLIC
 
     ${FLIGHT_DIR}/RC
 
+    ${FLIGHT_DIR}/Safety
+
     ${DRIVERS_DIR}/PWM
 
     ${INTERFACES_DIR}
@@ -547,8 +610,13 @@ target_link_libraries(FlightControl PUBLIC
 
     pico_stdlib
 
+    Esc
     FlightSensor
     RCInput
+
+    freertos_config
+    FreeRTOS-Kernel
+    FreeRTOS-Kernel-Heap4
 )
 
 ## ====================================================================================
@@ -600,6 +668,64 @@ target_link_libraries(Safety PUBLIC
     FlightSensor
     freertos_config
     FreeRTOS-Kernel
+)
+
+
+# ====================================================================================
+# Flight / Telemetry
+# ====================================================================================
+#
+# Telemetry architecture:
+#
+#     RCPublisher -------+
+#                        |
+#     IMUPublisher ------+----> TelemetryTask ----> CrsfTelemetry ----> Elrs
+#                        |                                          |
+#     SensorManager -----+                                          v
+#                        |                                    ELRS receiver
+#     FlightController --+
+#
+# Responsibilities:
+#
+#     TelemetryTask
+#       -> collect RC / IMU / GPS / barometer / flight state
+#       -> publish TelemetryState
+#       -> schedule CRSF telemetry frames
+#       -> transmit frames through the ELRS UART
+#
+# ====================================================================================
+
+add_library(FlightTelemetry
+
+    Flight/Telemetry/TelemetryTask.cpp
+)
+
+target_include_directories(FlightTelemetry PUBLIC
+
+    ${FLIGHT_DIR}/Telemetry
+
+    ${FLIGHT_DIR}/RC
+
+    ${FLIGHT_DIR}/Sensor
+
+    ${FLIGHT_DIR}/FlightControl
+
+    ${MANAGERS_DIR}/Sensors
+)
+
+target_link_libraries(FlightTelemetry PUBLIC
+
+    pico_stdlib
+
+    Elrs
+    RCInput
+    FlightSensor
+    FlightControl
+    SensorManager
+
+    freertos_config
+    FreeRTOS-Kernel
+    FreeRTOS-Kernel-Heap4
 )
 
 # ====================================================================================
@@ -681,6 +807,7 @@ target_link_libraries(drone PRIVATE
     BMP280
     GY271
     ICM20948
+    Gps
 
 
     # ----------------------------------------------------------------------------
@@ -716,6 +843,13 @@ target_link_libraries(drone PRIVATE
     # ----------------------------------------------------------------------------
 
     Safety
+
+
+    # ----------------------------------------------------------------------------
+    # Flight / Telemetry
+    # ----------------------------------------------------------------------------
+
+    FlightTelemetry
 
 
     # ----------------------------------------------------------------------------

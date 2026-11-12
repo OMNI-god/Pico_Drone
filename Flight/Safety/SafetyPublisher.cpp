@@ -14,9 +14,13 @@ void SafetyPublisher::publish(
 {
     taskENTER_CRITICAL();
 
-    ++_sequence;
-
     _snapshot = snapshot;
+
+    /*
+     * The sequence counter is incremented exactly once per
+     * publication. A reader compares the counter before and
+     * after copying the snapshot to detect a concurrent write.
+     */
 
     ++_sequence;
 
@@ -39,12 +43,11 @@ bool SafetyPublisher::read(
         _sequence;
 
     /*
-     * An even sequence means the publisher was not
-     * modifying the snapshot during the read.
+     * The snapshot is valid only when no publication
+     * happened while it was being copied.
      */
     valid =
-        sequenceBefore == sequenceAfter &&
-        (sequenceAfter % 2U) == 0U;
+        sequenceBefore == sequenceAfter;
 
     taskEXIT_CRITICAL();
 

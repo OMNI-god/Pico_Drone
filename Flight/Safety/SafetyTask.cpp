@@ -74,34 +74,23 @@ void SafetyTask::run()
         RCHealth rcHealth{};
         IMUSnapshot imu{};
 
-        if (readInputs(rc, rcHealth, imu))
-        {
-            const std::uint64_t nowUs =
-                time_us_64();
+        readInputs(rc, rcHealth, imu);
 
-            _safetyManager.update(
-                rc,
-                rcHealth,
-                imu,
-                nowUs);
+        const std::uint64_t nowUs =
+            time_us_64();
 
-            const SafetySnapshot &snapshot =
-                _safetyManager.getSnapshot();
+        _safetyManager.update(
+            rc,
+            rcHealth,
+            imu,
+            nowUs);
 
-            _safetyPublisher.publish(snapshot);
+        const SafetySnapshot &snapshot =
+            _safetyManager.getSnapshot();
 
-            _snapshot = snapshot;
-        }
-        else
-        {
-            /*
-             * If an input publisher cannot provide a valid
-             * snapshot, we intentionally do NOT invent
-             * sensor/RC data here.
-             *
-             * The next iteration will retry.
-             */
-        }
+        _safetyPublisher.publish(snapshot);
+
+        _snapshot = snapshot;
 
         vTaskDelayUntil(
             &lastWakeTime,
@@ -135,8 +124,29 @@ bool SafetyTask::readInputs(
     const bool imuValid =
         _imuPublisher.read(imu);
 
-    return rcValid &&
-           imuValid;
+    /*
+     * A missing publisher must be reported as an invalid
+     * input rather than being skipped.
+     *
+     * Without this, the safety layer would keep the last
+     * known state forever (for example "Armed") when the
+     * RC link or the IMU task stops publishing.
+     */
+
+    if (!rcValid)
+    {
+        rc.valid = false;
+        rc.failsafe = true;
+        rc.arm = false;
+        rc.throttle = 0.0f;
+    }
+
+    if (!imuValid)
+    {
+        imu.state.valid = false;
+    }
+
+    return true;
 }
 
 const SafetySnapshot &SafetyTask::getSnapshot() const

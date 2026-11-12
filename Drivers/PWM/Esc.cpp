@@ -10,7 +10,15 @@ Esc::Esc(
 {
     pin = pinNumber;
     this->frequency = frequency;
-    initialized = initialize();
+
+    /*
+     * The PWM slice is initialized lazily by the first
+     * setPulseWidth() call, or explicitly through
+     * initialize().
+     *
+     * This keeps global objects away from hardware
+     * access before main() runs.
+     */
 }
 
 bool Esc::initialize()
@@ -25,33 +33,57 @@ bool Esc::initialize()
     channel =
         pwm_gpio_to_channel(pin);
 
-    pwm_set_enabled(
-        sliceNumber,
-        true);
+    pwm_config config =
+        pwm_get_default_config();
+
+    clkDiv = 64.0f;
+
+    pwm_config_set_clkdiv(
+        &config,
+        clkDiv);
+
+    /*
+     * PWM period:
+     *
+     *     (wrap + 1) / (clk_sys / clkDiv) = 1 / frequency
+     *
+     * Therefore:
+     *
+     *     wrap = clk_sys / (clkDiv * frequency) - 1
+     */
 
     wrap =
-        clock_get_hz(clk_sys);
+        static_cast<uint32_t>(
+            static_cast<float>(clock_get_hz(clk_sys)) /
+            (clkDiv * static_cast<float>(frequency))) -
+        1u;
 
-    wrap /=
-        frequency - 1;
+    pwm_config_set_wrap(
+        &config,
+        static_cast<uint16_t>(wrap));
 
-    pwm_set_wrap(
+    pwm_init(
         sliceNumber,
-        wrap);
+        &config,
+        true);
+
+    initialized = true;
 
     return true;
 }
 
 int Esc::setSpeed(
-    int throttle)
+    int pulseWidthUs)
 {
-    if (!isValidTiming(throttle))
+    if (!isValidTiming(
+            static_cast<uint32_t>(pulseWidthUs)))
     {
         return -1;
     }
 
     return static_cast<int>(
-        setPulseWidth(throttle));
+        setPulseWidth(
+            static_cast<uint32_t>(pulseWidthUs)));
 }
 
 bool Esc::isValidTiming(
@@ -70,18 +102,34 @@ uint32_t Esc::setPulseWidth(
             return 0;
     }
 
-    uint32_t sys_clk =
-        clock_get_hz(clk_sys);
+    /*
+     * Keep the pulse inside the range accepted by
+     * virtually every ESC / servo.
+     */
 
-    uint32_t level =
-        width *
-        (wrap + 1) /
-        (sys_clk / frequency);
+    if (width < 800u)
+    {
+        width = 800u;
+    }
+
+    if (width > 2200u)
+    {
+        width = 2200u;
+    }
+
+    const float pwmClock =
+        static_cast<float>(clock_get_hz(clk_sys)) /
+        clkDiv;
+
+    const uint32_t level =
+        static_cast<uint32_t>(
+            (static_cast<float>(width) * pwmClock) /
+            1000000.0f);
 
     pwm_set_chan_level(
         sliceNumber,
         channel,
-        level);
+        static_cast<uint16_t>(level));
 
     return level;
 }

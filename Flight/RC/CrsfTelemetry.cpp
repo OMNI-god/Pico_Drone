@@ -132,17 +132,23 @@ bool CrsfTelemetry::buildBatteryFrame(
      * CRSF units:
      *
      * voltage:
-     *     0.01 mV? No.
+     *     0.1 V
      *
-     * Common CRSF implementation:
+     * current:
+     *     0.1 A
      *
-     *     voltage = mV * 100
-     *     current = mA * 100
+     * capacity:
+     *     mAh
      *
-     * Therefore:
+     * remaining:
+     *     percent
      *
-     *     volts * 100000
-     *     amps  * 100000
+     * Example:
+     *
+     *     11.1 V -> 111
+     *     2.50 A -> 25
+     *     1300 mAh -> 1300
+     *     87 % -> 87
      */
 
     float voltage = state.batteryVoltage;
@@ -172,16 +178,16 @@ bool CrsfTelemetry::buildBatteryFrame(
     const uint16_t encodedVoltage =
         static_cast<uint16_t>(
             std::clamp(
-                voltage * 100000.0f,
+                voltage * 10.0f,
                 0.0f,
-                65535.0f));
+                6553.5f));
 
     const uint16_t encodedCurrent =
         static_cast<uint16_t>(
             std::clamp(
-                current * 100000.0f,
+                current * 10.0f,
                 0.0f,
-                65535.0f));
+                6553.5f));
 
     const uint32_t encodedCapacity =
         static_cast<uint32_t>(
@@ -269,43 +275,45 @@ bool CrsfTelemetry::buildGpsFrame(
      *     meters + 1000
      */
 
-    float latitude =
-        static_cast<float>(
-            state.latitude);
-
-    float longitude =
-        static_cast<float>(
-            state.longitude);
+    double latitude = state.latitude;
+    double longitude = state.longitude;
 
     if (!std::isfinite(latitude))
     {
-        latitude = 0.0f;
+        latitude = 0.0;
     }
 
     if (!std::isfinite(longitude))
     {
-        longitude = 0.0f;
+        longitude = 0.0;
     }
+
+    /*
+     * Latitude is limited to +/-90 degrees and
+     * longitude to +/-180 degrees.
+     */
 
     latitude =
         std::clamp(
             latitude,
-            -180.0f,
-            180.0f);
+            -90.0,
+            90.0);
 
     longitude =
         std::clamp(
             longitude,
-            -180.0f,
-            180.0f);
+            -180.0,
+            180.0);
 
     const int32_t encodedLatitude =
         static_cast<int32_t>(
-            latitude * 10000000.0f);
+            std::round(
+                latitude * 10000000.0));
 
     const int32_t encodedLongitude =
         static_cast<int32_t>(
-            longitude * 10000000.0f);
+            std::round(
+                longitude * 10000000.0));
 
     // --------------------------------------------------------
     // Ground speed

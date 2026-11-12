@@ -6,11 +6,13 @@ SensorManager::SensorManager(
     ICM20948 &imu,
     GY271 &magnetometer,
     BMP280 &barometer,
-    ADXL345 &accelerometer)
+    ADXL345 &accelerometer,
+    Gps &gps)
     : imu(imu),
       magnetometer(magnetometer),
       barometer(barometer),
-      accelerometer(accelerometer)
+      accelerometer(accelerometer),
+      gps(gps)
 {
 }
 
@@ -22,12 +24,17 @@ bool SensorManager::initialize()
 {
     initialized = false;
 
-    bool success = true;
+    imuHealthy = false;
+    magnetometerHealthy = false;
+    barometerHealthy = false;
+    accelerometerHealthy = false;
+    gpsHealthy = false;
 
+    printf("\n");
     printf("Initializing sensors...\n");
 
     // ==================================================
-    // ICM20948
+    // ICM20948 - mandatory
     // ==================================================
 
     printf("ICM20948: ");
@@ -35,20 +42,20 @@ bool SensorManager::initialize()
     if (!imu.isConnected())
     {
         printf("NOT CONNECTED\n");
-        success = false;
     }
     else if (!imu.initialize())
     {
         printf("INITIALIZATION FAILED\n");
-        success = false;
     }
     else
     {
         printf("OK\n");
+
+        imuHealthy = true;
     }
 
     // ==================================================
-    // GY271
+    // GY271 - optional
     // ==================================================
 
     printf("GY271: ");
@@ -56,20 +63,20 @@ bool SensorManager::initialize()
     if (!magnetometer.isConnected())
     {
         printf("NOT CONNECTED\n");
-        success = false;
     }
     else if (!magnetometer.initialize())
     {
         printf("INITIALIZATION FAILED\n");
-        success = false;
     }
     else
     {
         printf("OK\n");
+
+        magnetometerHealthy = true;
     }
 
     // ==================================================
-    // BMP280
+    // BMP280 - optional
     // ==================================================
 
     printf("BMP280: ");
@@ -77,20 +84,20 @@ bool SensorManager::initialize()
     if (!barometer.isConnected())
     {
         printf("NOT CONNECTED\n");
-        success = false;
     }
     else if (!barometer.initialize())
     {
         printf("INITIALIZATION FAILED\n");
-        success = false;
     }
     else
     {
         printf("OK\n");
+
+        barometerHealthy = true;
     }
 
     // ==================================================
-    // ADXL345
+    // ADXL345 - optional
     // ==================================================
 
     printf("ADXL345: ");
@@ -98,29 +105,46 @@ bool SensorManager::initialize()
     if (!accelerometer.isConnected())
     {
         printf("NOT CONNECTED\n");
-        success = false;
     }
     else if (!accelerometer.initialize())
     {
         printf("INITIALIZATION FAILED\n");
-        success = false;
     }
     else
     {
         printf("OK\n");
+
+        accelerometerHealthy = true;
     }
 
-    initialized = success;
+    // ==================================================
+    // GPS - optional
+    // ==================================================
+
+    printf("GPS: ");
+
+    if (!gps.initialize())
+    {
+        printf("INITIALIZATION FAILED\n");
+    }
+    else
+    {
+        printf("OK\n");
+
+        gpsHealthy = true;
+    }
+
+    initialized = imuHealthy;
 
     if (initialized)
     {
         printf(
-            "All sensors initialized successfully\n");
+            "Sensor manager ready (IMU OK)\n");
     }
     else
     {
         printf(
-            "One or more sensors failed\n");
+            "ERROR: IMU is not available\n");
     }
 
     return initialized;
@@ -139,60 +163,51 @@ bool SensorManager::read(
     }
 
     // ==================================================
-    // IMU
+    // IMU - mandatory
     // ==================================================
 
     if (!imu.read(data.imu))
     {
-        printf("IMU READ FAILED\n");
         return false;
     }
 
     // ==================================================
-    // Magnetometer
+    // Magnetometer - optional
     // ==================================================
 
     if (!magnetometer.read(
             data.magnetometer))
     {
-        // Magnetometer may simply not have a new sample yet.
-        //
-        // Do NOT fail the entire sensor manager.
-        //
-        // Keep the previous magnetometer values.
-
-        printf("MAG NOT READY\n");
-    }
-    else
-    {
-        printf(
-            "MAG: X=%.4f Y=%.4f Z=%.4f\n",
-            data.magnetometer.x,
-            data.magnetometer.y,
-            data.magnetometer.z);
+        // The magnetometer may simply not have a new
+        // sample yet. Keep the previous value.
     }
 
     // ==================================================
-    // BMP280
+    // BMP280 - optional
     // ==================================================
 
     if (!barometer.read(
             data.barometer))
     {
-        printf("BARO READ FAILED\n");
-        return false;
+        // The barometer updates at its own rate.
+        // Keep the previous value.
     }
 
     // ==================================================
-    // External ADXL345
+    // External ADXL345 - optional
     // ==================================================
 
     if (!accelerometer.readAcceleration(
             data.externalAccelerometer))
     {
-        printf("ADXL READ FAILED\n");
-        return false;
+        // Keep the previous value.
     }
+
+    // ==================================================
+    // GPS - optional
+    // ==================================================
+
+    readGps(data.gps);
 
     return true;
 }
@@ -215,7 +230,8 @@ bool SensorManager::readIMU(
 bool SensorManager::readMagnetometer(
     GY271::MagneticField &data)
 {
-    if (!initialized)
+    if (!initialized ||
+        !magnetometerHealthy)
     {
         return false;
     }
@@ -226,7 +242,8 @@ bool SensorManager::readMagnetometer(
 bool SensorManager::readBarometer(
     BMP280::Measurements &data)
 {
-    if (!initialized)
+    if (!initialized ||
+        !barometerHealthy)
     {
         return false;
     }
@@ -237,12 +254,25 @@ bool SensorManager::readBarometer(
 bool SensorManager::readAccelerometer(
     ADXL345::Acceleration &data)
 {
-    if (!initialized)
+    if (!initialized ||
+        !accelerometerHealthy)
     {
         return false;
     }
 
     return accelerometer.readAcceleration(data);
+}
+
+bool SensorManager::readGps(
+    Gps::GpsState &data)
+{
+    if (!initialized ||
+        !gpsHealthy)
+    {
+        return false;
+    }
+
+    return gps.read(data);
 }
 
 // ======================================================
@@ -267,4 +297,38 @@ bool SensorManager::isBarometerConnected()
 bool SensorManager::isAccelerometerConnected()
 {
     return accelerometer.isConnected();
+}
+
+bool SensorManager::isGpsConnected()
+{
+    return gps.isInitialized();
+}
+
+// ======================================================
+// Health status
+// ======================================================
+
+bool SensorManager::isIMUHealthy() const
+{
+    return imuHealthy;
+}
+
+bool SensorManager::isMagnetometerHealthy() const
+{
+    return magnetometerHealthy;
+}
+
+bool SensorManager::isBarometerHealthy() const
+{
+    return barometerHealthy;
+}
+
+bool SensorManager::isAccelerometerHealthy() const
+{
+    return accelerometerHealthy;
+}
+
+bool SensorManager::isGpsHealthy() const
+{
+    return gpsHealthy;
 }

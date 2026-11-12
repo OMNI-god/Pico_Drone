@@ -13,8 +13,15 @@ public:
 
     bool initialize() override;
 
+    /*
+     * setSpeed() takes the pulse width in microseconds
+     * (1000 ... 2000 us for a standard ESC).
+     *
+     * The value is validated and then forwarded to
+     * setPulseWidth().
+     */
     int setSpeed(
-        int throttle);
+        int pulseWidthUs);
 
 private:
     uint32_t setPulseWidth(
