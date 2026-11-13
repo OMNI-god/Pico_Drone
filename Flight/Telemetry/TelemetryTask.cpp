@@ -90,12 +90,33 @@ void TelemetryTask::taskEntry(
 
 void TelemetryTask::run()
 {
-    const TickType_t periodTicks =
+    /*
+     * GPS service interval.
+     *
+     * The GPS receiver streams NMEA at 115200 baud.
+     * The PL011 receive FIFO is only 32 bytes deep,
+     * so it fills in roughly 2.8 ms. The telemetry
+     * update rate (100 Hz) is far too slow to drain
+     * it; polling every millisecond leaves enough
+     * margin that no sentence is ever lost.
+     */
+
+    constexpr TickType_t GpsServicePeriodTicks = 1;
+
+    TickType_t telemetryPeriodTicks =
         pdMS_TO_TICKS(
             1000 / _configuration.updateRateHz);
 
+    if (telemetryPeriodTicks == 0)
+    {
+        telemetryPeriodTicks = 1;
+    }
+
     TickType_t lastWakeTime =
         xTaskGetTickCount();
+
+    TickType_t lastTelemetryTicks =
+        lastWakeTime;
 
     /*
      * The barometer updates at roughly 1 Hz, so there is
@@ -108,21 +129,8 @@ void TelemetryTask::run()
 
     while (true)
     {
-        RCState rc{};
-        IMUSnapshot imu{};
-        FlightControllerState flightControllerState{};
-
-        (void)_rcPublisher.read(rc);
-        (void)_imuPublisher.read(imu);
-        (void)_flightController.readState(
-            flightControllerState);
-
-        const std::uint32_t nowMs =
-            static_cast<std::uint32_t>(
-                time_us_64() / 1000ULL);
-
         /*
-         * GPS.
+         * GPS fast path.
          *
          * The GPS driver is owned by this task: it is
          * the only consumer polling the receiver.
@@ -134,54 +142,76 @@ void TelemetryTask::run()
 
         _gpsState = gpsState;
 
-        /*
-         * Barometer.
-         */
+        const TickType_t nowTicks =
+            xTaskGetTickCount();
 
-        if (nowMs - lastBarometerMs >=
-            BarometerIntervalMs)
+        if ((nowTicks - lastTelemetryTicks) >=
+            telemetryPeriodTicks)
         {
-            BMP280::Measurements barometer{};
+            lastTelemetryTicks = nowTicks;
 
-            const bool barometerValid =
-                _sensors.readBarometer(barometer);
+            RCState rc{};
+            IMUSnapshot imu{};
+            FlightControllerState flightControllerState{};
 
-            if (barometerValid)
+            (void)_rcPublisher.read(rc);
+            (void)_imuPublisher.read(imu);
+            (void)_flightController.readState(
+                flightControllerState);
+
+            const std::uint32_t nowMs =
+                static_cast<std::uint32_t>(
+                    time_us_64() / 1000ULL);
+
+            /*
+             * Barometer.
+             */
+
+            if (nowMs - lastBarometerMs >=
+                BarometerIntervalMs)
             {
-                _barometer = barometer;
-                _barometerValid = true;
+                BMP280::Measurements barometer{};
 
-                updateVerticalSpeed(
-                    barometer.altitudeM,
-                    nowMs);
+                const bool barometerValid =
+                    _sensors.readBarometer(barometer);
+
+                if (barometerValid)
+                {
+                    _barometer = barometer;
+                    _barometerValid = true;
+
+                    updateVerticalSpeed(
+                        barometer.altitudeM,
+                        nowMs);
+                }
+
+                lastBarometerMs = nowMs;
             }
 
-            lastBarometerMs = nowMs;
+            /*
+             * Flight state.
+             */
+
+            updateState(
+                rc,
+                imu,
+                flightControllerState,
+                nowMs);
+
+            /*
+             * CRSF telemetry.
+             */
+
+            _telemetry.update(
+                _state,
+                nowMs);
+
+            transmit();
         }
-
-        /*
-         * Flight state.
-         */
-
-        updateState(
-            rc,
-            imu,
-            flightControllerState,
-            nowMs);
-
-        /*
-         * CRSF telemetry.
-         */
-
-        _telemetry.update(
-            _state,
-            nowMs);
-
-        transmit();
 
         vTaskDelayUntil(
             &lastWakeTime,
-            periodTicks);
+            GpsServicePeriodTicks);
     }
 }
 

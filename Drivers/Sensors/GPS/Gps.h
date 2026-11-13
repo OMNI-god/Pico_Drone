@@ -10,7 +10,11 @@
  *
  * The module speaks NMEA 0183 over its UART interface:
  *
- *     9600 baud, 8 data bits, no parity, 1 stop bit
+ *     115200 baud, 8 data bits, no parity, 1 stop bit
+ *
+ * The baud rate is configurable on the MT3339. The
+ * GP1513 factory default is 9600 baud, but this
+ * receiver is configured for 115200 baud.
  *
  * Default sentences:
  *

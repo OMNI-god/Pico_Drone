@@ -84,7 +84,12 @@ constexpr uint32_t I2C_BAUDRATE = 400000;
 // GP1513 / MC-1513 (MediaTek MT3339)
 //
 //     NMEA 0183
-//     9600 baud, 8 data bits, no parity, 1 stop bit
+//     115200 baud, 8 data bits, no parity, 1 stop bit
+//
+// The GP1513 factory default is 9600 baud; this
+// receiver is configured for 115200 baud, so the
+// telemetry task services the UART every 1 ms to
+// keep the 32-byte FIFO from overrunning.
 //
 // UART0 is used because UART1 carries the ELRS
 // Crossfire link.
@@ -102,7 +107,7 @@ constexpr uint32_t I2C_BAUDRATE = 400000;
 
 #define GPS_UART uart0
 
-constexpr uint32_t GPS_BAUDRATE = 9600;
+constexpr uint32_t GPS_BAUDRATE = 115200;
 
 constexpr uint8_t GPS_RX_PIN = 13;
 constexpr uint8_t GPS_TX_PIN = 12;
