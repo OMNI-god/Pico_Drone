@@ -386,12 +386,6 @@ bool BMP280::read(
 
     valid = true;
 
-    printf(
-        "BMP280: T=%.2f C | P=%.2f hPa | Alt=%.2f m\n",
-        temperatureC,
-        pressureHpa,
-        altitudeM);
-
     return true;
 }
 
@@ -561,63 +555,26 @@ bool BMP280::readCalibration()
             (static_cast<uint16_t>(data[23]) << 8));
 
     // =========================================================================
-    // Print calibration
+    // Summarize calibration
     // =========================================================================
 
-    printf("\n");
-    printf("BMP280 CALIBRATION\n");
-    printf("------------------\n");
-
     printf(
-        "T1 = %u\n",
-        dig_T1);
-
-    printf(
-        "T2 = %d\n",
-        dig_T2);
-
-    printf(
-        "T3 = %d\n",
-        dig_T3);
-
-    printf(
-        "P1 = %u\n",
-        dig_P1);
-
-    printf(
-        "P2 = %d\n",
-        dig_P2);
-
-    printf(
-        "P3 = %d\n",
+        "BMP280: calibration T1=%u T2=%d T3=%d P1=%u P2=%d P3=%d\n",
+        dig_T1,
+        dig_T2,
+        dig_T3,
+        dig_P1,
+        dig_P2,
         dig_P3);
 
     printf(
-        "P4 = %d\n",
-        dig_P4);
-
-    printf(
-        "P5 = %d\n",
-        dig_P5);
-
-    printf(
-        "P6 = %d\n",
-        dig_P6);
-
-    printf(
-        "P7 = %d\n",
-        dig_P7);
-
-    printf(
-        "P8 = %d\n",
-        dig_P8);
-
-    printf(
-        "P9 = %d\n",
+        "        P4=%d P5=%d P6=%d P7=%d P8=%d P9=%d\n",
+        dig_P4,
+        dig_P5,
+        dig_P6,
+        dig_P7,
+        dig_P8,
         dig_P9);
-
-    printf(
-        "------------------\n\n");
 
     // =========================================================================
     // Validate calibration
@@ -657,25 +614,6 @@ bool BMP280::readRaw(
     }
 
     // =========================================================================
-    // Print raw registers
-    // =========================================================================
-
-    printf(
-        "BMP280 DATA:\n"
-        "  F7 = 0x%02X\n"
-        "  F8 = 0x%02X\n"
-        "  F9 = 0x%02X\n"
-        "  FA = 0x%02X\n"
-        "  FB = 0x%02X\n"
-        "  FC = 0x%02X\n",
-        data[0],
-        data[1],
-        data[2],
-        data[3],
-        data[4],
-        data[5]);
-
-    // =========================================================================
     // Pressure
     // =========================================================================
 
@@ -692,11 +630,6 @@ bool BMP280::readRaw(
         (static_cast<int32_t>(data[3]) << 12) |
         (static_cast<int32_t>(data[4]) << 4) |
         (static_cast<int32_t>(data[5]) >> 4);
-
-    printf(
-        "BMP280 RAW: T=%ld P=%ld\n",
-        static_cast<long>(temperature),
-        static_cast<long>(pressure));
 
     return true;
 }

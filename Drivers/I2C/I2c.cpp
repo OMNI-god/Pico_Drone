@@ -2,7 +2,42 @@
 
 #include "hardware/gpio.h"
 
+#include "pico/time.h"
+
 #include <cstdio>
+
+namespace
+{
+/*
+ * Whole-transaction transfer timeout.
+ *
+ * A blocking transfer without a timeout hangs forever when a
+ * slave holds SDA low (for example after the MCU was reset in
+ * the middle of a transaction). Five milliseconds is far more
+ * than a 400 kHz transfer needs, and it bounds the failure.
+ */
+constexpr uint32_t kTransferTimeoutUs = 5000;
+
+/*
+ * Rate limit transfer error reports so a dead bus cannot
+ * flood the console at the sensor sampling rate.
+ */
+bool shouldReportError()
+{
+    static uint64_t lastReportUs = 0;
+
+    const uint64_t now = time_us_64();
+
+    if (now - lastReportUs < 1000000ULL)
+    {
+        return false;
+    }
+
+    lastReportUs = now;
+
+    return true;
+}
+} // namespace
 
 // =============================================================================
 // Constructor
@@ -36,6 +71,14 @@ bool I2c::initialize()
         printf("I2C: invalid instance\n");
         return false;
     }
+
+    /*
+     * Recover the bus before handing it to the hardware
+     * controller. The previous reset may have interrupted a
+     * transfer and left a slave holding SDA low.
+     */
+
+    recoverBus();
 
     i2c_init(
         i2cInstance,
@@ -100,16 +143,17 @@ int I2c::write(
     acquireBus();
 
     int result =
-        i2c_write_blocking(
+        i2c_write_timeout_us(
             i2cInstance,
             address,
             data,
             length,
-            nostop);
+            nostop,
+            kTransferTimeoutUs);
 
     releaseBus();
 
-    if (result < 0)
+    if (result < 0 && shouldReportError())
     {
         printf(
             "I2C: write failed, address=0x%02X result=%d\n",
@@ -145,16 +189,17 @@ int I2c::read(
     acquireBus();
 
     int result =
-        i2c_read_blocking(
+        i2c_read_timeout_us(
             i2cInstance,
             address,
             data,
             length,
-            nostop);
+            nostop,
+            kTransferTimeoutUs);
 
     releaseBus();
 
-    if (result < 0)
+    if (result < 0 && shouldReportError())
     {
         printf(
             "I2C: read failed, address=0x%02X result=%d\n",
@@ -218,29 +263,24 @@ int I2c::writeRead(
     // -------------------------------------------------------------------------
 
     int writeResult =
-        i2c_write_blocking(
+        i2c_write_timeout_us(
             i2cInstance,
             address,
             txData,
             txLength,
-            true);
+            true,
+            kTransferTimeoutUs);
 
     if (writeResult != static_cast<int>(txLength))
     {
-        printf(
-            "I2C: writeRead WRITE failed\n");
-
-        printf(
-            "      address = 0x%02X\n",
-            address);
-
-        printf(
-            "      expected = %lu\n",
-            static_cast<unsigned long>(txLength));
-
-        printf(
-            "      actual = %d\n",
-            writeResult);
+        if (shouldReportError())
+        {
+            printf(
+                "I2C: writeRead WRITE failed, address=0x%02X expected=%lu actual=%d\n",
+                address,
+                static_cast<unsigned long>(txLength),
+                writeResult);
+        }
 
         releaseBus();
 
@@ -256,31 +296,26 @@ int I2c::writeRead(
     // -------------------------------------------------------------------------
 
     int readResult =
-        i2c_read_blocking(
+        i2c_read_timeout_us(
             i2cInstance,
             address,
             rxData,
             rxLength,
-            false);
+            false,
+            kTransferTimeoutUs);
 
     releaseBus();
 
     if (readResult != static_cast<int>(rxLength))
     {
-        printf(
-            "I2C: writeRead READ failed\n");
-
-        printf(
-            "      address = 0x%02X\n",
-            address);
-
-        printf(
-            "      expected = %lu\n",
-            static_cast<unsigned long>(rxLength));
-
-        printf(
-            "      actual = %d\n",
-            readResult);
+        if (shouldReportError())
+        {
+            printf(
+                "I2C: writeRead READ failed, address=0x%02X expected=%lu actual=%d\n",
+                address,
+                static_cast<unsigned long>(rxLength),
+                readResult);
+        }
 
         return -1;
     }
@@ -307,5 +342,69 @@ void I2c::releaseBus()
     if (busMutex != nullptr)
     {
         xSemaphoreGive(busMutex);
+    }
+}
+
+// =============================================================================
+// Bus recovery
+// =============================================================================
+
+void I2c::recoverBus()
+{
+    /*
+     * Drive both lines as open-drain GPIOs so the bus can be
+     * clocked manually. SDA stays an input unless a STOP has to
+     * be generated.
+     */
+
+    gpio_init(sdaPin);
+    gpio_set_dir(sdaPin, GPIO_IN);
+    gpio_pull_up(sdaPin);
+
+    gpio_init(sclPin);
+    gpio_put(sclPin, 1);
+    gpio_set_dir(sclPin, GPIO_OUT);
+    gpio_pull_up(sclPin);
+
+    sleep_us(5);
+
+    /*
+     * SDA high means the bus is idle. If a slave is still
+     * holding it low, clock up to nine bits so it finishes the
+     * byte it was sending and releases the line.
+     */
+
+    if (!gpio_get(sdaPin))
+    {
+        for (int i = 0;
+             i < 9 && !gpio_get(sdaPin);
+             ++i)
+        {
+            gpio_put(sclPin, 0);
+            sleep_us(5);
+
+            gpio_put(sclPin, 1);
+            sleep_us(5);
+        }
+
+        /*
+         * Generate a STOP: SDA low while SCL is high, then
+         * release SDA.
+         */
+
+        gpio_put(sclPin, 0);
+        sleep_us(5);
+
+        gpio_put(sdaPin, 0);
+        gpio_set_dir(sdaPin, GPIO_OUT);
+        sleep_us(5);
+
+        gpio_put(sclPin, 1);
+        sleep_us(5);
+
+        gpio_put(sdaPin, 1);
+        sleep_us(5);
+
+        gpio_set_dir(sdaPin, GPIO_IN);
     }
 }

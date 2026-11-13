@@ -30,121 +30,75 @@ bool SensorManager::initialize()
     accelerometerHealthy = false;
     gpsHealthy = false;
 
+    /*
+     * Probe first so a missing device can be reported
+     * separately from an initialization failure.
+     */
+
+    const bool imuConnected =
+        imu.isConnected();
+
+    const bool magnetometerConnected =
+        magnetometer.isConnected();
+
+    const bool barometerConnected =
+        barometer.isConnected();
+
+    const bool accelerometerConnected =
+        accelerometer.isConnected();
+
+    /*
+     * Each driver prints its own detection log. The
+     * status table is printed afterwards so the logs
+     * and the summary do not interleave.
+     */
+
+    imuHealthy =
+        imuConnected && imu.initialize();
+
+    magnetometerHealthy =
+        magnetometerConnected && magnetometer.initialize();
+
+    barometerHealthy =
+        barometerConnected && barometer.initialize();
+
+    accelerometerHealthy =
+        accelerometerConnected && accelerometer.initialize();
+
+    gpsHealthy =
+        gps.initialize();
+
+    const auto statusText = [](bool connected, bool healthy)
+    {
+        if (!connected)
+        {
+            return "NOT CONNECTED";
+        }
+
+        return healthy ? "OK" : "FAILED";
+    };
+
     printf("\n");
-    printf("Initializing sensors...\n");
-
-    // ==================================================
-    // ICM20948 - mandatory
-    // ==================================================
-
-    printf("ICM20948: ");
-
-    if (!imu.isConnected())
-    {
-        printf("NOT CONNECTED\n");
-    }
-    else if (!imu.initialize())
-    {
-        printf("INITIALIZATION FAILED\n");
-    }
-    else
-    {
-        printf("OK\n");
-
-        imuHealthy = true;
-    }
-
-    // ==================================================
-    // GY271 - optional
-    // ==================================================
-
-    printf("GY271: ");
-
-    if (!magnetometer.isConnected())
-    {
-        printf("NOT CONNECTED\n");
-    }
-    else if (!magnetometer.initialize())
-    {
-        printf("INITIALIZATION FAILED\n");
-    }
-    else
-    {
-        printf("OK\n");
-
-        magnetometerHealthy = true;
-    }
-
-    // ==================================================
-    // BMP280 - optional
-    // ==================================================
-
-    printf("BMP280: ");
-
-    if (!barometer.isConnected())
-    {
-        printf("NOT CONNECTED\n");
-    }
-    else if (!barometer.initialize())
-    {
-        printf("INITIALIZATION FAILED\n");
-    }
-    else
-    {
-        printf("OK\n");
-
-        barometerHealthy = true;
-    }
-
-    // ==================================================
-    // ADXL345 - optional
-    // ==================================================
-
-    printf("ADXL345: ");
-
-    if (!accelerometer.isConnected())
-    {
-        printf("NOT CONNECTED\n");
-    }
-    else if (!accelerometer.initialize())
-    {
-        printf("INITIALIZATION FAILED\n");
-    }
-    else
-    {
-        printf("OK\n");
-
-        accelerometerHealthy = true;
-    }
-
-    // ==================================================
-    // GPS - optional
-    // ==================================================
-
-    printf("GPS: ");
-
-    if (!gps.initialize())
-    {
-        printf("INITIALIZATION FAILED\n");
-    }
-    else
-    {
-        printf("OK\n");
-
-        gpsHealthy = true;
-    }
+    printf("      ICM20948       %s\n",
+           statusText(imuConnected, imuHealthy));
+    printf("      GY271          %s\n",
+           statusText(magnetometerConnected, magnetometerHealthy));
+    printf("      BMP280         %s\n",
+           statusText(barometerConnected, barometerHealthy));
+    printf("      ADXL345        %s\n",
+           statusText(accelerometerConnected, accelerometerHealthy));
+    printf("      GPS            %s\n",
+           gpsHealthy ? "OK" : "FAILED");
 
     initialized = imuHealthy;
 
     if (initialized)
     {
-        printf(
-            "Sensor manager ready (IMU OK)\n");
+        printf("      Sensor manager ready\n");
     }
     else
     {
-        printf(
-            "ERROR: IMU is not available\n");
+        printf("      ERROR: IMU is not available\n");
     }
 
     return initialized;

@@ -53,6 +53,14 @@ private:
 
     void releaseBus();
 
+    /*
+     * Clock a bus that was left mid-transaction back to idle.
+     *
+     * A reset during an I2C transfer can leave the slave
+     * driving SDA low, which blocks every later transfer.
+     */
+    void recoverBus();
+
 private:
     i2c_inst_t *i2cInstance;
 

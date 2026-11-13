@@ -289,6 +289,121 @@ static TelemetryTask telemetryTask(
     elrs);
 
 // ============================================================
+// Diagnostics formatting helpers
+// ============================================================
+
+static const char *yesNo(bool value)
+{
+    return value ? "YES" : "NO";
+}
+
+static const char *okOrDash(bool value)
+{
+    return value ? "OK" : "--";
+}
+
+static const char *onOff(bool value)
+{
+    return value ? "ON" : "OFF";
+}
+
+static const char *flightModeName(RCFlightMode mode)
+{
+    switch (mode)
+    {
+    case RCFlightMode::Angle:
+        return "ANGLE";
+
+    case RCFlightMode::Horizon:
+        return "HORIZON";
+
+    case RCFlightMode::Acro:
+        return "ACRO";
+
+    default:
+        return "UNKNOWN";
+    }
+}
+
+static const char *safetyStateName(SafetyState state)
+{
+    switch (state)
+    {
+    case SafetyState::Disarmed:
+        return "DISARMED";
+
+    case SafetyState::Arming:
+        return "ARMING";
+
+    case SafetyState::Armed:
+        return "ARMED";
+
+    case SafetyState::Failsafe:
+        return "FAILSAFE";
+
+    default:
+        return "UNKNOWN";
+    }
+}
+
+static void printFaultList(SafetyFault faults)
+{
+    if (faults == SafetyFault::None)
+    {
+        printf("NONE");
+        return;
+    }
+
+    bool first = true;
+
+    const auto emit = [&first](const char *name)
+    {
+        printf("%s%s", first ? "" : " ", name);
+        first = false;
+    };
+
+    if (hasFault(faults, SafetyFault::RcInvalid))
+    {
+        emit("RC_INVALID");
+    }
+
+    if (hasFault(faults, SafetyFault::RcFailsafe))
+    {
+        emit("RC_FAILSAFE");
+    }
+
+    if (hasFault(faults, SafetyFault::RcUnhealthy))
+    {
+        emit("RC_UNHEALTHY");
+    }
+
+    if (hasFault(faults, SafetyFault::ThrottleNotLow))
+    {
+        emit("THROTTLE_NOT_LOW");
+    }
+
+    if (hasFault(faults, SafetyFault::ImuInvalid))
+    {
+        emit("IMU_INVALID");
+    }
+
+    if (hasFault(faults, SafetyFault::ImuNotCalibrated))
+    {
+        emit("IMU_NOT_CALIBRATED");
+    }
+
+    if (hasFault(faults, SafetyFault::ImuDataStale))
+    {
+        emit("IMU_STALE");
+    }
+
+    if (hasFault(faults, SafetyFault::ArmSwitchNotActive))
+    {
+        emit("ARM_SWITCH_OFF");
+    }
+}
+
+// ============================================================
 // Diagnostics task
 // ============================================================
 
@@ -374,280 +489,173 @@ static void diagnosticsTask(void *parameter)
         telemetryTask.readState(telemetryState);
 
         // ====================================================
+        // Barometer snapshot
+        // ====================================================
+
+        BMP280::Measurements barometer{};
+
+        const bool barometerValid =
+            sensorManager.readBarometer(barometer);
+
+        // ====================================================
+        // Summary flags
+        // ====================================================
+
+        const bool rcOk =
+            rcStateValid &&
+            rcHealth.connected &&
+            rcHealth.healthy &&
+            !rcHealth.failsafe;
+
+        const bool imuOk =
+            imuValid &&
+            imuSnapshot.calibrated;
+
+        const bool gpsOk =
+            telemetryState.satellites > 0 ||
+            telemetryState.latitude != 0.0f;
+
+        const std::uint32_t uptimeSeconds =
+            static_cast<std::uint32_t>(
+                time_us_64() / 1000000ULL);
+
+        // ====================================================
         // Header
         // ====================================================
 
         printf("\n");
-        printf("============================================================\n");
-        printf("                  FLIGHT CONTROLLER STATUS\n");
-        printf("============================================================\n");
+        printf("================================================================\n");
+        printf(
+            " FLIGHT CONTROLLER   uptime %5lu s   %s\n",
+            static_cast<unsigned long>(uptimeSeconds),
+            safetyStateName(safetySnapshot.state));
+
+        printf("================================================================\n");
+
+        printf(
+            " SUMMARY   RC %s   IMU %s   GPS %s   BARO %s   FAILSAFE %s\n",
+            okOrDash(rcOk),
+            okOrDash(imuOk),
+            okOrDash(gpsOk),
+            okOrDash(barometerValid),
+            yesNo(rcHealth.failsafe || safetySnapshot.rcFailsafe));
+
+        printf("----------------------------------------------------------------\n");
 
         // ====================================================
         // IMU
         // ====================================================
 
-        printf("IMU\n");
-
         printf(
-            "  Valid       : %s\n",
-            imuValid ? "YES" : "NO");
-
-        printf(
-            "  Calibrated  : %s\n",
-            imuSnapshot.calibrated
-                ? "YES"
-                : "NO");
-
-        printf(
-            "  Sequence    : %lu\n",
-            static_cast<unsigned long>(
-                currentSequence));
-
-        printf(
-            "  Rate        : %lu samples/sec\n",
-            static_cast<unsigned long>(
-                samplesPerSecond));
+            " IMU       valid %s   calibrated %s   %lu Hz   seq %lu\n",
+            yesNo(imuValid),
+            yesNo(imuSnapshot.calibrated),
+            static_cast<unsigned long>(samplesPerSecond),
+            static_cast<unsigned long>(currentSequence));
 
         if (imuValid)
         {
             printf(
-                "  Accel       : "
-                "X=%8.4f "
-                "Y=%8.4f "
-                "Z=%8.4f g\n",
-
+                "           accel     X %8.4f   Y %8.4f   Z %8.4f g\n",
                 imuSnapshot.state.accelX,
                 imuSnapshot.state.accelY,
                 imuSnapshot.state.accelZ);
 
             printf(
-                "  Gyro        : "
-                "X=%8.3f "
-                "Y=%8.3f "
-                "Z=%8.3f deg/s\n",
-
+                "           gyro      X %8.3f   Y %8.3f   Z %8.3f deg/s\n",
                 imuSnapshot.state.gyroX,
                 imuSnapshot.state.gyroY,
                 imuSnapshot.state.gyroZ);
-
-            printf(
-                "  Timestamp   : %llu us\n",
-
-                static_cast<unsigned long long>(
-                    imuSnapshot.state.timestampUs));
         }
 
-        // ====================================================
-        // Calibration
-        // ====================================================
-
         printf(
-            "  Calibration : %u / %u\n",
-
-            static_cast<unsigned>(
-                imuCalibration.getSampleCount()),
-
-            static_cast<unsigned>(
-                imuCalibration.getRequiredSampleCount()));
-
-        // ====================================================
-        // Attitude
-        // ====================================================
-
-        printf(
-            "  Attitude    : "
-            "Roll=%7.2f "
-            "Pitch=%7.2f "
-            "Yaw=%7.2f deg\n",
-
+            "           attitude  roll %7.2f   pitch %7.2f   yaw %7.2f deg\n",
             flightState.attitudeRoll,
             flightState.attitudePitch,
             flightState.attitudeYaw);
+
+        printf(
+            "           calib %u/%u   timestamp %llu us\n",
+            static_cast<unsigned>(
+                imuCalibration.getSampleCount()),
+            static_cast<unsigned>(
+                imuCalibration.getRequiredSampleCount()),
+            static_cast<unsigned long long>(
+                imuSnapshot.state.timestampUs));
 
         // ====================================================
         // RC
         // ====================================================
 
         printf("\n");
-        printf("RC\n");
 
         printf(
-            "  Frames      : %lu\n",
-            static_cast<unsigned long>(
-                rcHealth.totalFrames));
+            " RC        connected %s   healthy %s   failsafe %s   valid %s\n",
+            yesNo(rcHealth.connected),
+            yesNo(rcHealth.healthy),
+            yesNo(rcHealth.failsafe),
+            yesNo(rcStateValid));
 
         printf(
-            "  Rate        : %lu frames/sec\n",
-            static_cast<unsigned long>(
-                rcHealth.framesLastSecond));
-
-        printf(
-            "  Connected   : %s\n",
-            rcHealth.connected
-                ? "YES"
-                : "NO");
-
-        printf(
-            "  Healthy     : %s\n",
-            rcHealth.healthy
-                ? "YES"
-                : "NO");
-
-        printf(
-            "  Failsafe    : %s\n",
-            rcHealth.failsafe
-                ? "YES"
-                : "NO");
-
-        // ----------------------------------------------------
-        // Frame age
-        // ----------------------------------------------------
+            "           frames %lu   %lu fps   age ",
+            static_cast<unsigned long>(rcHealth.totalFrames),
+            static_cast<unsigned long>(rcHealth.framesLastSecond));
 
         if (rcHealth.lastFrameTimeUs == 0)
         {
-            printf(
-                "  Frame age   : NEVER\n");
+            printf("NEVER");
         }
         else
         {
             printf(
-                "  Frame age   : %llu us\n",
-
+                "%llu us",
                 static_cast<unsigned long long>(
                     rcHealth.frameAgeUs));
         }
 
-        // ----------------------------------------------------
-        // Received bytes
-        // ----------------------------------------------------
+        printf(
+            "   bytes %lu\n",
+            static_cast<unsigned long>(rcHealth.totalBytes));
 
         printf(
-            "  Bytes       : %lu\n",
-
-            static_cast<unsigned long>(
-                rcHealth.totalBytes));
-
-        // ----------------------------------------------------
-        // Published RC state
-        // ----------------------------------------------------
-
-        printf(
-            "  State valid : %s\n",
-            rcStateValid
-                ? "YES"
-                : "NO");
-
-        // ====================================================
-        // Raw RC channels
-        // ====================================================
-
-        printf(
-            "  Channels    : "
-            "%u %u %u %u | "
-            "%u %u %u %u\n",
-
+            "           channels  %4u %4u %4u %4u | %4u %4u %4u %4u\n",
             rcState.rawChannels[0],
             rcState.rawChannels[1],
             rcState.rawChannels[2],
             rcState.rawChannels[3],
-
             rcState.rawChannels[4],
             rcState.rawChannels[5],
             rcState.rawChannels[6],
             rcState.rawChannels[7]);
 
         printf(
-            "                "
-            "%u %u %u %u | "
-            "%u %u %u %u\n",
-
+            "                     %4u %4u %4u %4u | %4u %4u %4u %4u\n",
             rcState.rawChannels[8],
             rcState.rawChannels[9],
             rcState.rawChannels[10],
             rcState.rawChannels[11],
-
             rcState.rawChannels[12],
             rcState.rawChannels[13],
             rcState.rawChannels[14],
             rcState.rawChannels[15]);
 
-        // ====================================================
-        // Processed RC state
-        // ====================================================
-
         printf(
-            "  Roll        : %7.3f\n",
-            rcState.roll);
-
-        printf(
-            "  Pitch       : %7.3f\n",
-            rcState.pitch);
-
-        printf(
-            "  Yaw         : %7.3f\n",
-            rcState.yaw);
-
-        printf(
-            "  Throttle    : %7.3f\n",
+            "           sticks    roll %7.3f   pitch %7.3f   yaw %7.3f   throttle %7.3f\n",
+            rcState.roll,
+            rcState.pitch,
+            rcState.yaw,
             rcState.throttle);
 
         printf(
-            "  Arm         : %s\n",
-            rcState.arm
-                ? "ON"
-                : "OFF");
+            "           arm %s   beeper %s   calib %s   mode %s   frame %lu\n",
+            onOff(rcState.arm),
+            onOff(rcState.beeper),
+            onOff(rcState.calibration),
+            flightModeName(rcState.flightMode),
+            static_cast<unsigned long>(rcState.frameCounter));
 
         printf(
-            "  Beeper      : %s\n",
-            rcState.beeper
-                ? "ON"
-                : "OFF");
-
-        printf(
-            "  Calibration : %s\n",
-            rcState.calibration
-                ? "ON"
-                : "OFF");
-
-        // ====================================================
-        // Flight mode
-        // ====================================================
-
-        printf(
-            "  Flight mode : ");
-
-        switch (rcState.flightMode)
-        {
-        case RCFlightMode::Angle:
-            printf("ANGLE\n");
-            break;
-
-        case RCFlightMode::Horizon:
-            printf("HORIZON\n");
-            break;
-
-        case RCFlightMode::Acro:
-            printf("ACRO\n");
-            break;
-
-        default:
-            printf("UNKNOWN\n");
-            break;
-        }
-
-        // ====================================================
-        // RC timestamp / frame counter
-        // ====================================================
-
-        printf(
-            "  Frame count : %lu\n",
-
-            static_cast<unsigned long>(
-                rcState.frameCounter));
-
-        printf(
-            "  Timestamp   : %llu us\n",
-
+            "           timestamp %llu us\n",
             static_cast<unsigned long long>(
                 rcState.lastUpdateUs));
 
@@ -656,207 +664,73 @@ static void diagnosticsTask(void *parameter)
         // ====================================================
 
         printf("\n");
-        printf("SAFETY\n");
 
         printf(
-            "  Valid       : %s\n",
-            safetyValid ? "YES" : "NO");
+            " SAFETY    state %s   valid %s\n",
+            safetyStateName(safetySnapshot.state),
+            yesNo(safetyValid));
 
         printf(
-            "  State       : ");
-
-        switch (safetySnapshot.state)
-        {
-        case SafetyState::Disarmed:
-            printf("DISARMED\n");
-            break;
-
-        case SafetyState::Arming:
-            printf("ARMING\n");
-            break;
-
-        case SafetyState::Armed:
-            printf("ARMED\n");
-            break;
-
-        case SafetyState::Failsafe:
-            printf("FAILSAFE\n");
-            break;
-
-        default:
-            printf("UNKNOWN\n");
-            break;
-        }
+            "           rc valid %s   failsafe %s   healthy %s\n",
+            yesNo(safetySnapshot.rcValid),
+            yesNo(safetySnapshot.rcFailsafe),
+            yesNo(safetySnapshot.rcHealthy));
 
         printf(
-            "  RC          : valid=%s failsafe=%s healthy=%s\n",
-
-            safetySnapshot.rcValid ? "YES" : "NO",
-            safetySnapshot.rcFailsafe ? "YES" : "NO",
-            safetySnapshot.rcHealthy ? "YES" : "NO");
+            "           throttle low %s   arm request %s\n",
+            yesNo(safetySnapshot.throttleLow),
+            yesNo(safetySnapshot.armRequested));
 
         printf(
-            "  Throttle low: %s\n",
+            "           imu valid %s   calibrated %s   fresh %s\n",
+            yesNo(safetySnapshot.imuValid),
+            yesNo(safetySnapshot.imuCalibrated),
+            yesNo(safetySnapshot.imuDataFresh));
 
-            safetySnapshot.throttleLow ? "YES" : "NO");
-
-        printf(
-            "  Arm request : %s\n",
-
-            safetySnapshot.armRequested ? "YES" : "NO");
-
-        printf(
-            "  IMU         : valid=%s calibrated=%s fresh=%s\n",
-
-            safetySnapshot.imuValid ? "YES" : "NO",
-            safetySnapshot.imuCalibrated ? "YES" : "NO",
-            safetySnapshot.imuDataFresh ? "YES" : "NO");
-
-        // ----------------------------------------------------
-        // Faults
-        // ----------------------------------------------------
-
-        printf(
-            "  Faults      : ");
-
-        if (safetySnapshot.faults == SafetyFault::None)
-        {
-            printf("NONE\n");
-        }
-        else
-        {
-            if (hasFault(
-                    safetySnapshot.faults,
-                    SafetyFault::RcInvalid))
-            {
-                printf("RC_INVALID ");
-            }
-
-            if (hasFault(
-                    safetySnapshot.faults,
-                    SafetyFault::RcFailsafe))
-            {
-                printf("RC_FAILSAFE ");
-            }
-
-            if (hasFault(
-                    safetySnapshot.faults,
-                    SafetyFault::RcUnhealthy))
-            {
-                printf("RC_UNHEALTHY ");
-            }
-
-            if (hasFault(
-                    safetySnapshot.faults,
-                    SafetyFault::ThrottleNotLow))
-            {
-                printf("THROTTLE_NOT_LOW ");
-            }
-
-            if (hasFault(
-                    safetySnapshot.faults,
-                    SafetyFault::ImuInvalid))
-            {
-                printf("IMU_INVALID ");
-            }
-
-            if (hasFault(
-                    safetySnapshot.faults,
-                    SafetyFault::ImuNotCalibrated))
-            {
-                printf("IMU_NOT_CALIBRATED ");
-            }
-
-            if (hasFault(
-                    safetySnapshot.faults,
-                    SafetyFault::ImuDataStale))
-            {
-                printf("IMU_STALE ");
-            }
-
-            if (hasFault(
-                    safetySnapshot.faults,
-                    SafetyFault::ArmSwitchNotActive))
-            {
-                printf("ARM_SWITCH_OFF ");
-            }
-
-            printf("\n");
-        }
+        printf("           faults ");
+        printFaultList(safetySnapshot.faults);
+        printf("\n");
 
         // ====================================================
         // GPS
         // ====================================================
 
         printf("\n");
-        printf("GPS\n");
 
         printf(
-            "  Valid       : %s\n",
-            telemetryState.satellites > 0 ||
-                    telemetryState.latitude != 0.0
-                ? "YES"
-                : "NO");
+            " GPS       fix %s   %u satellites   bytes %lu\n",
+            yesNo(gpsOk),
+            static_cast<unsigned>(telemetryState.satellites),
+            static_cast<unsigned long>(gps.getReceivedBytes()));
 
         printf(
-            "  Satellites  : %u\n",
-            static_cast<unsigned>(
-                telemetryState.satellites));
-
-        printf(
-            "  Latitude    : %.7f\n",
-            telemetryState.latitude);
-
-        printf(
-            "  Longitude   : %.7f\n",
+            "           lat %10.7f   lon %10.7f\n",
+            telemetryState.latitude,
             telemetryState.longitude);
 
         printf(
-            "  Bytes       : %lu\n",
-            static_cast<unsigned long>(
-                gps.getReceivedBytes()));
-
-        printf(
-            "  Altitude    : %.2f m\n",
-            telemetryState.gpsAltitude);
-
-        printf(
-            "  Speed       : %.2f m/s\n",
-            telemetryState.groundSpeed);
-
-        printf(
-            "  Heading     : %.1f deg\n",
+            "           alt %7.2f m   speed %5.2f m/s   heading %5.1f deg\n",
+            telemetryState.gpsAltitude,
+            telemetryState.groundSpeed,
             telemetryState.gpsHeading);
 
         // ====================================================
         // Barometer
         // ====================================================
 
-        BMP280::Measurements barometer{};
-
-        const bool barometerValid =
-            sensorManager.readBarometer(barometer);
-
         printf("\n");
-        printf("BAROMETER\n");
-
-        printf(
-            "  Valid       : %s\n",
-            barometerValid ? "YES" : "NO");
 
         if (barometerValid)
         {
             printf(
-                "  Temperature : %.2f C\n",
-                barometer.temperatureC);
-
-            printf(
-                "  Pressure    : %.2f hPa\n",
-                barometer.pressureHpa);
-
-            printf(
-                "  Altitude    : %.2f m\n",
+                " BARO      valid YES   temp %5.2f C   pressure %8.2f hPa   alt %7.2f m\n",
+                barometer.temperatureC,
+                barometer.pressureHpa,
                 barometer.altitudeM);
+        }
+        else
+        {
+            printf(" BARO      valid NO\n");
         }
 
         // ====================================================
@@ -864,56 +738,38 @@ static void diagnosticsTask(void *parameter)
         // ====================================================
 
         printf("\n");
-        printf("FLIGHT CONTROL\n");
 
         printf(
-            "  Armed       : %s\n",
-            flightState.armed ? "YES" : "NO");
-
-        printf(
-            "  Failsafe    : %s\n",
-            flightState.failsafe ? "YES" : "NO");
-
-        printf(
-            "  Throttle    : %.3f\n",
+            " CONTROL   armed %s   failsafe %s   throttle %6.3f\n",
+            yesNo(flightState.armed),
+            yesNo(flightState.failsafe),
             flightState.throttle);
 
         printf(
-            "  Target rate : "
-            "Roll=%7.1f "
-            "Pitch=%7.1f "
-            "Yaw=%7.1f deg/s\n",
-
+            "           target rate  roll %6.1f   pitch %6.1f   yaw %6.1f deg/s\n",
             flightState.targetRollRate,
             flightState.targetPitchRate,
             flightState.targetYawRate);
 
         printf(
-            "  Motors      : "
-            "M0=%5.3f "
-            "M1=%5.3f "
-            "M2=%5.3f "
-            "M3=%5.3f\n",
-
+            "           motors  M0 %6.3f   M1 %6.3f   M2 %6.3f   M3 %6.3f\n",
             flightState.motors[0],
             flightState.motors[1],
             flightState.motors[2],
             flightState.motors[3]);
 
         // ====================================================
-        // FreeRTOS / system
+        // System
         // ====================================================
 
         printf("\n");
-        printf("SYSTEM\n");
 
         printf(
-            "  Heap free   : %lu bytes\n",
-
+            " SYSTEM    heap free %lu bytes\n",
             static_cast<unsigned long>(
                 xPortGetFreeHeapSize()));
 
-        printf("============================================================\n");
+        printf("================================================================\n");
 
         // ====================================================
         // Diagnostics period
@@ -940,24 +796,20 @@ int main()
     sleep_ms(2000);
 
     printf("\n");
-    printf("============================================================\n");
-    printf("              RASPBERRY PI PICO 2 FC\n");
-    printf("============================================================\n");
-
-    printf(
-        "FreeRTOS configuration loaded.\n");
+    printf("================================================================\n");
+    printf("                 RASPBERRY PI PICO 2 FC\n");
+    printf("================================================================\n");
 
     // ========================================================
     // I2C
     // ========================================================
 
-    printf("\n");
-    printf("Initializing I2C...\n");
+    printf("\n[1/5] I2C\n");
 
     if (!i2c.initialize())
     {
         printf(
-            "ERROR: I2C initialization failed.\n");
+            "      ERROR: I2C initialization failed.\n");
 
         while (true)
         {
@@ -966,20 +818,11 @@ int main()
     }
 
     printf(
-        "I2C initialized.\n");
-
-    printf(
-        "  SDA       : GPIO %u\n",
+        "      SDA GPIO%u   SCL GPIO%u   %lu Hz\n",
         static_cast<unsigned>(
-            I2C_SDA_PIN));
-
-    printf(
-        "  SCL       : GPIO %u\n",
+            I2C_SDA_PIN),
         static_cast<unsigned>(
-            I2C_SCL_PIN));
-
-    printf(
-        "  Baudrate  : %lu Hz\n",
+            I2C_SCL_PIN),
         static_cast<unsigned long>(
             I2C_BAUDRATE));
 
@@ -987,13 +830,15 @@ int main()
     // Sensors
     // ========================================================
 
+    printf("\n[2/5] Sensors\n");
+
     if (!sensorManager.initialize())
     {
         printf(
-            "ERROR: IMU is not available.\n");
+            "      ERROR: IMU is not available.\n");
 
         printf(
-            "Check the I2C wiring and the sensor power.\n");
+            "      Check the I2C wiring and sensor power.\n");
 
         while (true)
         {
@@ -1005,13 +850,12 @@ int main()
     // ELRS
     // ========================================================
 
-    printf("\n");
-    printf("Initializing ELRS...\n");
+    printf("\n[3/5] ELRS\n");
 
     if (!elrs.initialize())
     {
         printf(
-            "ERROR: ELRS initialization failed.\n");
+            "      ERROR: ELRS initialization failed.\n");
 
         while (true)
         {
@@ -1020,32 +864,16 @@ int main()
     }
 
     printf(
-        "ELRS initialized.\n");
-
-    printf(
-        "  UART      : UART1\n");
-
-    printf(
-        "  RX GPIO   : %u\n",
-        static_cast<unsigned>(
-            UART_RX_PIN));
-
-    printf(
-        "  TX GPIO   : %u\n",
-        static_cast<unsigned>(
-            UART_TX_PIN));
-
-    printf(
-        "  Baudrate  : %lu\n",
-        static_cast<unsigned long>(
-            CRSF_BAUDRATE));
+        "      UART1   RX GPIO%u   TX GPIO%u   %lu baud\n",
+        static_cast<unsigned>(UART_RX_PIN),
+        static_cast<unsigned>(UART_TX_PIN),
+        static_cast<unsigned long>(CRSF_BAUDRATE));
 
     // ========================================================
     // Motors
     // ========================================================
 
-    printf("\n");
-    printf("Initializing motors...\n");
+    printf("\n[4/5] Motors\n");
 
     for (uint8_t i = 0;
          i < MOTOR_COUNT;
@@ -1054,28 +882,29 @@ int main()
         MOTORS[i]->initialize();
 
         MOTORS[i]->setSpeed(1000);
-
-        printf(
-            "  Motor %u   : GPIO %u\n",
-            static_cast<unsigned>(i),
-            static_cast<unsigned>(
-                MOTOR_PINS[i]));
     }
+
+    printf(
+        "      M0 GPIO%u   M1 GPIO%u   M2 GPIO%u   M3 GPIO%u\n",
+        static_cast<unsigned>(MOTOR_PINS[0]),
+        static_cast<unsigned>(MOTOR_PINS[1]),
+        static_cast<unsigned>(MOTOR_PINS[2]),
+        static_cast<unsigned>(MOTOR_PINS[3]));
 
     // ========================================================
     // RC task
     // ========================================================
 
-    printf("\n");
-    printf("Starting RC task...\n");
+    printf("\n[5/5] Tasks\n");
+
+    printf("      RC            ");
 
     if (!rcTask.start(
             "RC",
             1024,
             6))
     {
-        printf(
-            "ERROR: RC task creation failed.\n");
+        printf("FAILED\n");
 
         while (true)
         {
@@ -1083,20 +912,17 @@ int main()
         }
     }
 
-    printf(
-        "RC task started.\n");
+    printf("OK\n");
 
     // ========================================================
     // IMU task
     // ========================================================
 
-    printf(
-        "Starting IMU task...\n");
+    printf("      IMU           ");
 
     if (!imuTask.start())
     {
-        printf(
-            "ERROR: IMU task creation failed.\n");
+        printf("FAILED\n");
 
         while (true)
         {
@@ -1104,23 +930,20 @@ int main()
         }
     }
 
-    printf(
-        "IMU task started.\n");
+    printf("OK\n");
 
     // ========================================================
     // Safety task
     // ========================================================
 
-    printf(
-        "Starting safety task...\n");
+    printf("      Safety        ");
 
     if (!safetyTask.start(
             "Safety",
             1024,
             7))
     {
-        printf(
-            "ERROR: Safety task creation failed.\n");
+        printf("FAILED\n");
 
         while (true)
         {
@@ -1128,23 +951,20 @@ int main()
         }
     }
 
-    printf(
-        "Safety task started.\n");
+    printf("OK\n");
 
     // ========================================================
     // Flight control task
     // ========================================================
 
-    printf(
-        "Starting flight control task...\n");
+    printf("      FlightControl ");
 
     if (!flightControlTask.start(
             "FlightControl",
             2048,
             6))
     {
-        printf(
-            "ERROR: Flight control task creation failed.\n");
+        printf("FAILED\n");
 
         while (true)
         {
@@ -1152,23 +972,20 @@ int main()
         }
     }
 
-    printf(
-        "Flight control task started.\n");
+    printf("OK\n");
 
     // ========================================================
     // Telemetry task
     // ========================================================
 
-    printf(
-        "Starting telemetry task...\n");
+    printf("      Telemetry     ");
 
     if (!telemetryTask.start(
             "Telemetry",
             2048,
             4))
     {
-        printf(
-            "ERROR: Telemetry task creation failed.\n");
+        printf("FAILED\n");
 
         while (true)
         {
@@ -1176,15 +993,13 @@ int main()
         }
     }
 
-    printf(
-        "Telemetry task started.\n");
+    printf("OK\n");
 
     // ========================================================
     // Diagnostics task
     // ========================================================
 
-    printf(
-        "Creating diagnostics task...\n");
+    printf("      Diagnostics   ");
 
     if (xTaskCreate(
             diagnosticsTask,
@@ -1194,8 +1009,7 @@ int main()
             2,
             nullptr) != pdPASS)
     {
-        printf(
-            "ERROR: Diagnostics task creation failed.\n");
+        printf("FAILED\n");
 
         while (true)
         {
@@ -1203,17 +1017,16 @@ int main()
         }
     }
 
-    printf(
-        "Diagnostics task created.\n");
+    printf("OK\n");
 
     // ========================================================
     // Scheduler
     // ========================================================
 
     printf("\n");
-    printf("============================================================\n");
-    printf("Starting FreeRTOS scheduler...\n");
-    printf("============================================================\n");
+    printf("================================================================\n");
+    printf(" System ready. Diagnostics run at 1 Hz.\n");
+    printf("================================================================\n");
 
     vTaskStartScheduler();
 
