@@ -1,5 +1,7 @@
 #include "Gps.h"
 
+#include "PioUartRx.h"
+
 #include "pico/stdlib.h"
 #include "pico/time.h"
 
@@ -24,6 +26,18 @@ Gps::Gps(
 {
 }
 
+Gps::Gps(
+    PioUartRx &pioRx,
+    std::uint32_t baudrate,
+    std::uint32_t txPin)
+    : uartInstance_(nullptr),
+      pioRx_(&pioRx),
+      baudrate_(baudrate),
+      rxPin_(pioRx.getRxPin()),
+      txPin_(txPin)
+{
+}
+
 // =============================================================================
 // Initialize
 // =============================================================================
@@ -32,6 +46,42 @@ bool Gps::initialize()
 {
     if (initialized_)
     {
+        return true;
+    }
+
+    /*
+     * PIO receive path.
+     *
+     * Used when the hardware UART is already taken
+     * by the ELRS/CRSF link.
+     */
+
+    if (pioRx_ != nullptr)
+    {
+        if (!pioRx_->initialize(baudrate_))
+        {
+            printf("GPS: PIO initialization failed\n");
+            return false;
+        }
+
+        /*
+         * The flight controller never transmits to
+         * the GPS, but the module's RX input must
+         * not float. Hold it at the UART idle level.
+         */
+
+        gpio_init(txPin_);
+        gpio_set_dir(txPin_, GPIO_OUT);
+        gpio_put(txPin_, 1);
+
+        initialized_ = true;
+
+        printf(
+            "GPS: PIO RX initialized (%lu baud, RX GPIO %lu, TX GPIO %lu idle)\n",
+            static_cast<unsigned long>(baudrate_),
+            static_cast<unsigned long>(rxPin_),
+            static_cast<unsigned long>(txPin_));
+
         return true;
     }
 
@@ -128,6 +178,36 @@ bool Gps::read(
      * The module streams NMEA sentences continuously,
      * so every pending byte is consumed here.
      */
+
+    if (pioRx_ != nullptr)
+    {
+        while (pioRx_->available())
+        {
+            const int value = pioRx_->read();
+
+            if (value < 0)
+            {
+                break;
+            }
+
+            const char byte =
+                static_cast<char>(value);
+
+            ++receivedBytes_;
+
+            if (feedByte(byte) &&
+                parseSentence(
+                    sentence_,
+                    sentenceIndex_))
+            {
+                decodedFix = true;
+            }
+        }
+
+        state = state_;
+
+        return decodedFix;
+    }
 
     while (uart_is_readable(uartInstance_))
     {

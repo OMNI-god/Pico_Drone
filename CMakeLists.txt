@@ -173,6 +173,35 @@ target_link_libraries(I2c PUBLIC
 
 
 # ====================================================================================
+# PIO UART Receiver
+# ====================================================================================
+
+add_library(PioUartRx
+
+    Drivers/UART/PioUartRx.cpp
+)
+
+target_include_directories(PioUartRx PUBLIC
+
+    ${DRIVERS_DIR}/UART
+)
+
+pico_generate_pio_header(PioUartRx
+
+    ${CMAKE_CURRENT_LIST_DIR}/Drivers/UART/uart_rx.pio
+)
+
+target_link_libraries(PioUartRx PUBLIC
+
+    pico_stdlib
+    hardware_pio
+    hardware_gpio
+    hardware_clocks
+    hardware_irq
+)
+
+
+# ====================================================================================
 # UART / ELRS Driver
 # ====================================================================================
 
@@ -350,6 +379,7 @@ add_library(Gps
 target_include_directories(Gps PUBLIC
 
     ${DRIVERS_DIR}/Sensors/GPS
+    ${DRIVERS_DIR}/UART
 )
 
 target_link_libraries(Gps PUBLIC
@@ -357,6 +387,8 @@ target_link_libraries(Gps PUBLIC
     pico_stdlib
     hardware_uart
     hardware_gpio
+
+    PioUartRx
 )
 
 
@@ -778,6 +810,7 @@ target_link_libraries(drone PRIVATE
     hardware_uart
     hardware_gpio
     hardware_clocks
+    hardware_pio
 
 
     # ----------------------------------------------------------------------------
@@ -795,6 +828,7 @@ target_link_libraries(drone PRIVATE
 
     I2c
     Elrs
+    PioUartRx
     Esc
     Servo
 

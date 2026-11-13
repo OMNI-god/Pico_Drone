@@ -18,6 +18,7 @@
 #include "BMP280.h"
 #include "ADXL345.h"
 #include "Gps.h"
+#include "PioUartRx.h"
 #include "Esc.h"
 
 // ============================================================
@@ -87,50 +88,55 @@ constexpr uint32_t I2C_BAUDRATE = 400000;
 //     115200 baud, 8 data bits, no parity, 1 stop bit
 //
 // The GP1513 factory default is 9600 baud; this
-// receiver is configured for 115200 baud, so the
-// telemetry task services the UART every 1 ms to
-// keep the 32-byte FIFO from overrunning.
+// receiver is configured for 115200 baud. The PIO
+// receiver drains its FIFO into a ring buffer from
+// an interrupt, so no bytes are lost even though
+// the telemetry task polls the GPS every 1 ms.
 //
-// UART1 is used for the GPS because the module
-// wiring is fixed to GPIO8/9, which only expose
-// UART1 on the RP2350 (function F2). The ELRS
-// Crossfire link therefore moves to UART0.
+// The serial hardware is fixed:
 //
-// UART1 pin mux:
+//     WiFi  GPIO12/13  (UART0)
+//     GPS   GPIO8/9    (UART1)
+//     ELRS  GPIO4/5    (UART1)
 //
-//     GPIO8 = UART1 TX
-//     GPIO9 = UART1 RX
+// The RP2350 has only two UART peripherals, and both
+// GPS and ELRS are wired to UART1 pins, so the GPS
+// receive path is implemented in PIO on GPIO8 and the
+// hardware UART1 is left to the ELRS/CRSF link.
+//
+// The GPS is receive-only: the module's RX input is
+// held at the idle-high level on GPIO9 instead of
+// being driven by a second UART TX.
 //
 // Wiring:
 //
-//     GPS TX  -> GPIO9 (Pico RX)
-//     GPS RX  -> GPIO8 (Pico TX)
+//     GPS TX  -> GPIO8 (PIO RX)
+//     GPS RX  -> GPIO9 (held idle-high)
 // ============================================================
-
-#define GPS_UART uart1
 
 constexpr uint32_t GPS_BAUDRATE = 115200;
 
-constexpr uint8_t GPS_RX_PIN = 9;
-constexpr uint8_t GPS_TX_PIN = 8;
+constexpr uint8_t GPS_RX_PIN = 8;
+constexpr uint8_t GPS_TX_PIN = 9;
 
 // ============================================================
 // CRSF configuration
 //
-// UART0 is used because UART1 now carries the GPS.
+// ELRS stays on UART1 GPIO4/5, which is where the
+// receiver is physically wired.
 //
 // Wiring:
 //
-//     ELRS TX -> GPIO1 (Pico RX)
-//     ELRS RX -> GPIO0 (Pico TX)
+//     ELRS TX -> GPIO5 (Pico RX)
+//     ELRS RX -> GPIO4 (Pico TX)
 // ============================================================
 
-#define CRSF_UART uart0
+#define CRSF_UART uart1
 
 constexpr uint32_t CRSF_BAUDRATE = 420000;
 
-constexpr uint8_t UART_TX_PIN = 0;
-constexpr uint8_t UART_RX_PIN = 1;
+constexpr uint8_t UART_TX_PIN = 4;
+constexpr uint8_t UART_RX_PIN = 5;
 
 // ============================================================
 // Motor configuration
@@ -173,10 +179,11 @@ static BMP280 bmp280(i2c);
 
 static ADXL345 adxl345(i2c);
 
+static PioUartRx gpsPioRx(GPS_RX_PIN);
+
 static Gps gps(
-    GPS_UART,
+    gpsPioRx,
     GPS_BAUDRATE,
-    GPS_RX_PIN,
     GPS_TX_PIN);
 
 static SensorManager sensorManager(
@@ -1016,7 +1023,7 @@ int main()
         "ELRS initialized.\n");
 
     printf(
-        "  UART      : UART0\n");
+        "  UART      : UART1\n");
 
     printf(
         "  RX GPIO   : %u\n",

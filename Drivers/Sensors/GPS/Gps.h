@@ -4,6 +4,8 @@
 
 #include "hardware/uart.h"
 
+class PioUartRx;
+
 /*
  * GPS receiver driver for the ADH-Tech GP1513 / MC-1513
  * (MediaTek MT3339 based) module.
@@ -90,6 +92,18 @@ public:
         uart_inst_t *uart,
         std::uint32_t baudrate,
         std::uint32_t rxPin,
+        std::uint32_t txPin);
+
+    /*
+     * PIO receive-only constructor.
+     *
+     * Used when the hardware UART is already taken.
+     * The GPS sender has no need to transmit to the
+     * module, so txPin is simply held idle-high.
+     */
+    Gps(
+        PioUartRx &pioRx,
+        std::uint32_t baudrate,
         std::uint32_t txPin);
 
     bool initialize();
@@ -197,6 +211,8 @@ private:
     // =====================================================================
 
     uart_inst_t *uartInstance_;
+
+    PioUartRx *pioRx_ = nullptr;
 
     std::uint32_t baudrate_;
 
