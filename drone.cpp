@@ -101,23 +101,23 @@ constexpr uint32_t I2C_BAUDRATE = 400000;
 //
 // The RP2350 has only two UART peripherals, and both
 // GPS and ELRS are wired to UART1 pins, so the GPS
-// receive path is implemented in PIO on GPIO8 and the
+// receive path is implemented in PIO on GPIO9 and the
 // hardware UART1 is left to the ELRS/CRSF link.
 //
 // The GPS is receive-only: the module's RX input is
-// held at the idle-high level on GPIO9 instead of
+// held at the idle-high level on GPIO8 instead of
 // being driven by a second UART TX.
 //
 // Wiring:
 //
-//     GPS TX  -> GPIO8 (PIO RX)
-//     GPS RX  -> GPIO9 (held idle-high)
+//     GPS TX  -> GPIO9 (PIO RX)
+//     GPS RX  -> GPIO8 (held idle-high)
 // ============================================================
 
 constexpr uint32_t GPS_BAUDRATE = 115200;
 
-constexpr uint8_t GPS_RX_PIN = 8;
-constexpr uint8_t GPS_TX_PIN = 9;
+constexpr uint8_t GPS_RX_PIN = 9;
+constexpr uint8_t GPS_TX_PIN = 8;
 
 // ============================================================
 // CRSF configuration

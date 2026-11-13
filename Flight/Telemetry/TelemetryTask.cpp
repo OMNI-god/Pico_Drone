@@ -94,11 +94,12 @@ void TelemetryTask::run()
      * GPS service interval.
      *
      * The GPS receiver streams NMEA at 115200 baud.
-     * The PL011 receive FIFO is only 32 bytes deep,
-     * so it fills in roughly 2.8 ms. The telemetry
-     * update rate (100 Hz) is far too slow to drain
-     * it; polling every millisecond leaves enough
-     * margin that no sentence is ever lost.
+     * The PIO receiver stores bytes in a ring buffer,
+     * which the telemetry task drains here. Polling
+     * every millisecond keeps the buffer nearly empty
+     * and lets the NMEA parser keep up with the stream
+     * while the flight/CRSF state still publishes at
+     * the configured rate.
      */
 
     constexpr TickType_t GpsServicePeriodTicks = 1;
