@@ -91,37 +91,46 @@ constexpr uint32_t I2C_BAUDRATE = 400000;
 // telemetry task services the UART every 1 ms to
 // keep the 32-byte FIFO from overrunning.
 //
-// UART0 is used because UART1 carries the ELRS
-// Crossfire link.
+// UART1 is used for the GPS because the module
+// wiring is fixed to GPIO8/9, which only expose
+// UART1 on the RP2350 (function F2). The ELRS
+// Crossfire link therefore moves to UART0.
 //
-// UART0 pin mux:
+// UART1 pin mux:
 //
-//     GPIO12 = UART0 TX
-//     GPIO13 = UART0 RX
+//     GPIO8 = UART1 TX
+//     GPIO9 = UART1 RX
 //
 // Wiring:
 //
-//     GPS TX  -> GPIO13 (Pico RX)
-//     GPS RX  -> GPIO12 (Pico TX)
+//     GPS TX  -> GPIO9 (Pico RX)
+//     GPS RX  -> GPIO8 (Pico TX)
 // ============================================================
 
-#define GPS_UART uart0
+#define GPS_UART uart1
 
 constexpr uint32_t GPS_BAUDRATE = 115200;
 
-constexpr uint8_t GPS_RX_PIN = 13;
-constexpr uint8_t GPS_TX_PIN = 12;
+constexpr uint8_t GPS_RX_PIN = 9;
+constexpr uint8_t GPS_TX_PIN = 8;
 
 // ============================================================
 // CRSF configuration
+//
+// UART0 is used because UART1 now carries the GPS.
+//
+// Wiring:
+//
+//     ELRS TX -> GPIO1 (Pico RX)
+//     ELRS RX -> GPIO0 (Pico TX)
 // ============================================================
 
-#define CRSF_UART uart1
+#define CRSF_UART uart0
 
 constexpr uint32_t CRSF_BAUDRATE = 420000;
 
-constexpr uint8_t UART_TX_PIN = 4;
-constexpr uint8_t UART_RX_PIN = 5;
+constexpr uint8_t UART_TX_PIN = 0;
+constexpr uint8_t UART_RX_PIN = 1;
 
 // ============================================================
 // Motor configuration
@@ -130,8 +139,11 @@ constexpr uint8_t UART_RX_PIN = 5;
 //
 //     0 = front right   (GPIO 6)
 //     1 = front left    (GPIO 7)
-//     2 = rear right    (GPIO 8)
-//     3 = rear left     (GPIO 9)
+//     2 = rear right    (GPIO 10)
+//     3 = rear left     (GPIO 11)
+//
+// Motors 2 and 3 must not use GPIO8/9: those pins
+// belong to the GPS UART.
 // ============================================================
 
 constexpr uint8_t MOTOR_COUNT = 4;
@@ -140,8 +152,8 @@ constexpr uint8_t MOTOR_PINS[MOTOR_COUNT] =
     {
         6,
         7,
-        8,
-        9};
+        10,
+        11};
 
 // ============================================================
 // Hardware objects
@@ -1004,7 +1016,7 @@ int main()
         "ELRS initialized.\n");
 
     printf(
-        "  UART      : UART1\n");
+        "  UART      : UART0\n");
 
     printf(
         "  RX GPIO   : %u\n",
