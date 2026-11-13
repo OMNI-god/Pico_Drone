@@ -88,14 +88,24 @@ constexpr uint32_t I2C_BAUDRATE = 400000;
 //
 // UART0 is used because UART1 carries the ELRS
 // Crossfire link.
+//
+// UART0 pin mux:
+//
+//     GPIO12 = UART0 TX
+//     GPIO13 = UART0 RX
+//
+// Wiring:
+//
+//     GPS TX  -> GPIO13 (Pico RX)
+//     GPS RX  -> GPIO12 (Pico TX)
 // ============================================================
 
 #define GPS_UART uart0
 
 constexpr uint32_t GPS_BAUDRATE = 9600;
 
-constexpr uint8_t GPS_RX_PIN = 0;
-constexpr uint8_t GPS_TX_PIN = 1;
+constexpr uint8_t GPS_RX_PIN = 13;
+constexpr uint8_t GPS_TX_PIN = 12;
 
 // ============================================================
 // CRSF configuration
