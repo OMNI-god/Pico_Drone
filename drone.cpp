@@ -92,7 +92,7 @@ constexpr uint32_t I2C_BAUDRATE = 400000;
 
 #define GPS_UART uart0
 
-constexpr uint32_t GPS_BAUDRATE = 115200;
+constexpr uint32_t GPS_BAUDRATE = 9600;
 
 constexpr uint8_t GPS_RX_PIN = 0;
 constexpr uint8_t GPS_TX_PIN = 1;
@@ -105,8 +105,8 @@ constexpr uint8_t GPS_TX_PIN = 1;
 
 constexpr uint32_t CRSF_BAUDRATE = 420000;
 
-constexpr uint8_t UART_TX_PIN = 8;
-constexpr uint8_t UART_RX_PIN = 9;
+constexpr uint8_t UART_TX_PIN = 4;
+constexpr uint8_t UART_RX_PIN = 5;
 
 // ============================================================
 // Motor configuration
