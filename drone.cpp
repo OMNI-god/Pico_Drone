@@ -778,6 +778,11 @@ static void diagnosticsTask(void *parameter)
             telemetryState.longitude);
 
         printf(
+            "  Bytes       : %lu\n",
+            static_cast<unsigned long>(
+                gps.getReceivedBytes()));
+
+        printf(
             "  Altitude    : %.2f m\n",
             telemetryState.gpsAltitude);
 
