@@ -34,8 +34,16 @@ struct RCHealth
 
     // ------------------------------------------------------------
     // Health thresholds
+    //
+    // The minimum frame rate must tolerate the frame rates
+    // used by consumer RC links (ExpressLRS / Crossfire
+    // transmit RC frames well below 20 frames per second).
+    //
+    // The frame age check (MaximumFrameAgeUs) already
+    // handles actual dropouts, so the rate floor only
+    // needs to catch a completely stalled link.
     // ------------------------------------------------------------
 
-    static constexpr std::uint32_t MinimumFrameRate = 20;
+    static constexpr std::uint32_t MinimumFrameRate = 5;
     static constexpr std::uint64_t MaximumFrameAgeUs = 100'000;
 };
